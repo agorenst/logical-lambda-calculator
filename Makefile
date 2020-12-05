@@ -38,5 +38,5 @@ book.pdf: book.tex
 	latexmk -shell-escape -pdf book.tex
 
 clean:
-	latexmk -c book.tex
-	rm -r *.tex *.tests *.filetest
+	latexmk -c book.tex -f
+	rm -f *.tex *.tests *.filetest *.pl

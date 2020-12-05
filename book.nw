@@ -198,7 +198,7 @@ execute_command(['execute', L], OD,OD) :-
     %write(LS), nl,
     desugar_all(L,OD,R),
     %write(R), nl,
-    internal_lambda_string(R,RS),
+    %internal_lambda_string(R,RS),
     %write(RS), nl,
     evaluate(R,Z),
     internal_lambda_string(Z,ZS),
