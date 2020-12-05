@@ -1,0 +1,426 @@
+\documentclass{article}
+\usepackage{noweb}
+\usepackage{minted}
+\usepackage{syntax}
+
+\title{Lambda Calculus Through Prolog}
+\author{Aaron Gorenstein}
+\date{January 1, 2021}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This is a concise exploration some of the fundamental machinery of lambda calculus through the programming language prolog.
+This ``bridge'' between two different models of computation is a fascinating one to explore.
+It implements $\beta$-reductions and, with additional ad-hoc macro machinery, demonstrates some fundamental computations.
+Complete source code listings are provided in-line in text, as well as a single total listing as an appendix.
+\end{abstract}
+
+\section{Introduction}
+This will follow closely a terrific book on ``building a Scheme'' from $\lambda$-calculus\cite{lambdacalc}.
+That the prolog is remotely good is a credit only to a terrific discussion on prolog\cite{artofprolog}.
+Any issues are my own.
+
+\section{Lambda Calculus Refresher}
+
+\section{Defining the Lambda Calculus Model}
+Lambda calculus is defined by a simple grammar:
+\begin{grammar}
+<expression> ::= <name> \alt <function> \alt <application>
+
+<function> ::= $\lambda$ <name> . <expression>
+
+<application> ::= ( <expression> <expression> )
+\end{grammar}
+
+We can almost directly translate the grammar into semantic statements in Prolog.
+<<Initial Lambda Calculus Definitions>>=
+expression(L) :- name(L).
+expression(L) :- function(L).
+expression(L) :- application(L).
+name(X) :- not(is_list(X)), ground(X), X \= lambda.
+function([lambda, V, B]) :- name(V), expression(B).
+application([E1, E2]) :- expression(E1), expression(E2).
+@
+We also have the prolog-y style of accessing the components of a function or application:
+<<Initial Lambda Calculus Definitions>>=
+function([lambda, V, B], V, B) :- function([lambda, V, B]).
+application([E1, E2], E1, E2) :- application([E1, E2]).
+@
+The entire motivation of these is informed by how, e.g., [[function([lambda, V, B], V, B)]] uses the same [[V]] twice.
+This enables statements like: [[function(F, N, E)]], that can resolve the atom [[E]] to the expression \emph{inside} the function [[F]].
+The declarative nature of prolog means this works both directions.\footnote{Explain this better!}
+
+We have now built the ability to express any lambda expression in prolog.
+What remains is to build the notion of \emph{function application}.
+This is the true punchline of the document: building a bridge between our expression of computation (unification) into another language's (function application).
+In lambda calculus, the fundamental function application is called $\beta$-reduction.
+It is defined like so: (ADD DEFINITION HERE).
+
+Our convention is that [[R]] always is the ``result'' of the definitions.
+Of course there's no such thing as a result, but as a concession to the imperative mindset we'll orient ourselves that way.
+
+This is realizd in prolog as follows:
+<<Beta Reduction>>=
+beta_reduction(F,A,R) :- function(F,V,B), replace(V,B,A,R).
+@
+So [[R]] is the result of applying [[F]] to [[A]] when [[F]] is a function with a variable [[V]], body [[B]], and [[R]] is the (resulting) expression when we replace [[V]] with [[A]] in [[B]].
+Observe that $\beta$-reduction is only defined on a function.
+This is defined by appealing to our yet-to-be-defined predicate [[replace]].
+
+That predicate, roughly, says that ``the replacement of V in the body, B, by the applicant A, yields the result R''.
+Or in other words, ``R is anything equal to the replacement of V in B by A''.
+Note we use the ``accessor'' definition of [[function]] to see its bound variable V and body B, in the course of using [[replace]].
+
+So, how might we realize [[replace]]?
+We can orient ourselves by considering the possibilities of [[B]].
+The body of our function [[F]], it can be either a name (such as if [[F]] were the identity function), another (nested) function definition, or an application.
+In other words, [[B]] can really be anything!
+Let's begin:
+
+<<Replace Predicate>>=
+replace(V,V,A,A) :- name(V).
+replace(V,W,_,W) :- name(W), V \= W.
+@
+This first definition is essentially the identity function.
+In the recursive case, this is exactly the name-replacement we want.
+In the body [[B]] that is \emph{just} the bound variable [[V]], replacing [[V]] with the applicant [[A]] should yield the result exactly [[A]].
+That is what we're saying here.
+
+What if [[B]] is a name [[W]] that is not equal to the bound variable [[V]]?
+By the rules of beta-reduction, we should simply yield [[W]], with no regard to the applicant [[A]].
+That is exactly what we can write, here:
+
+With those 2 lines we have completely accounted for how to replace a name in $\beta$-reduction.
+Now we can consider functions.
+In the typical case, we would ``simply'' recurse:
+<<Replace Predicate>>=
+replace(V,F,_,F) :- function(F,V,_).
+replace(V,F,A,R) :- function(F,W,B), W \= V, replace(V,B,A,S), function(R,W,S).
+@
+Essentially, for function [[F]] with a bound variable [[W]] that is not equal to [[V]], the result is to continue the replacement process in the body of [[F]] using the same [[A]] and [[V]].
+The result of that replacement, the function [[R]], will still have the original bound variable [[W]] as our pre-replaced [[F]], but have the newly-updated replaced body [[S]].
+Another way of conceptualizing the predicates is a sequence of transformation and definitions.
+
+Note how the above definition has the requirement that [[W \= V]].
+What if we have some $\lambda x.\lambda x(x x)$?
+We \emph{choose} to have our $\lambda$-calculus semantics to have shadowing\footnote{Right word?}, suggesting that we should \emph{stop} any replacement:
+
+Lastly, what if we have an application? That one's actually pretty straightforward, because we don't have to do any name-comparisons.
+<<Replace Predicate>>=
+replace(V,P,A,R) :- application(P,E1,E2), 
+    replace(V,E1,A,R1),
+    replace(V,E2,A,R2),
+    application(R,R1,R2).
+@
+
+Our work so far:
+<<lambda.pl>>=
+<<Initial Lambda Calculus Definitions>>
+<<Beta Reduction>>
+<<Replace Predicate>>
+@
+
+Let's solidify our understanding with some examples.
+
+How might we test this?
+<<BetaReductionTests.sh>>=
+cat 'Beta Reduction Tests' | while read -r line
+do
+    swipl -s lambda.pl -g "$line" -t halt
+done
+@
+
+\section{Evaluating}
+These $\beta$-reductions are just the building block of the complete $\lambda$-calculus computation.
+The full form is called \emph{evaluation}, of which there are two variants:
+
+
+
+
+\section{Syntactic Sugar}
+We'd like a mapping of names to lambda expressions.
+Essentially, this is a ``prelude'' of applications to our single lambda expression.
+In other words, it's our environment.
+How might this be realized in code?
+<<Syntactic Sugar>>=
+desugr(L,[N,E],R) :-
+    function(F,N,L),
+    beta_reduction(F,E,R).
+
+desugar_all(L,[],L).
+desugar_all(L,[M|T],R) :- desugar(L,M,S), desugar_all(S,T,R).
+@
+
+We can begin defining a list of 
+
+\subsection{$\beta$-Reduction To Evaluation}
+In a sense, a $\beta$-reduction is just a single step, and it's only defined for function-applications.
+We would like additional machinery so that, given a $\lambda$-calculus expression, we \emph{evaluate} the whole thing.
+First, we want to define a single step to evaluate \emph{any} expression:
+<<Evaluate Expression>>=
+% Given a lambda calculus sentence, we can try to evaluate it.
+% This machinery pieces apart and goes through the sentence, and
+% beta-reduces as necessary.
+evaluate(L,L) :- name(L).
+evaluate(L,R) :- function(L,V,B), evaluate(B,BR), function(R,V,BR).
+evaluate(L,R) :- application(L,E1,E2),
+    evaluate_application(E1,E2,R).
+% Observe that we essentially have four cases, depending on the type
+% of the first parameter.
+evaluate_application(E1,E2,R) :- name(E1),
+    evaluate(E2,R2),
+    application(R,E1,R2).
+evaluate_application(E1,E2,R) :- function(E1),
+    beta_reduction(E1,E2,S),
+    evaluate(S,R).
+evaluate_application(E1,E2,R) :- application(E1),
+    evaluate(E1,R1), E1 \= R1, % interesting edge case
+    application(S,R1,E2),
+    evaluate(S,R).
+evaluate_application(E1,E2,R) :- application(E1),
+    evaluate(E1,E1),
+    evaluate(E2,R2),
+    application(R,E1,R2).
+@
+As a sequel, we'd like to evaluate \emph{maximally}, whatever that means:
+<<Evaluate Expression>>=
+% This evaluates until we can evaluate no more.
+evaluate_star(L,R) :- evaluate(L,S), L \= S, evaluate_star(S,R).
+evaluate_star(L,L) :- evaluate(L,L).
+@
+
+And that's it! We can now calculate arbitrary lambda calculus sentences.
+
+NORMAL ORDER VERSUS APPLICATIVE ORDER, let's implement both.
+
+
+\subsection{Neat Lambda Examples}
+
+
+\subsection{Limits of Evaluate-Star}
+At the start, I had thought this was enough--now we had a prolog environment from which we could, say, bootstrap a full implementation of Scheme.
+This is not the case, not in any practical sense.
+A closer analogy is that this is a ``ALU'' \emph{inside} a ``CPU'' for an lambda-calculus process.
+It can do the fundamental computation operations ($\beta$-reductions), but it can't maintain a mapping of symbols to values.
+Of course it also has extremely limited environment interaction, unable to read user input outside of the prolog environment\footnote{this is kind of vague}.
+
+\section{Defining An Environment}
+Let's define the simplest sort of macro environment we can hope for:
+
+
+We can simply append on macros as normal.
+The machinery here is fun:
+Given an expression [[L]], we go through our list of macros [[[M|T]]], successively seeing if the macro [[M]] plays a role in [[L]].
+How do we do that?
+You can see in apply-macro that we define our expression [[L]] as the \emph{body} of a new function [[F]], and then simply do a beta_reduction.
+This is exactly the name-replacement machinery we want. Awesome!
+
+\subsection{Application of Macros: AND, NAND, Functions}
+This allows us to succintly say:
+
+\subsection{Application Extension: Reversing Macros}
+
+\subsection{Limitations of the Macro System}
+I don't think this will work
+\subsection{Fun Extensions: Functional Equality}
+Will this succinctly capture higher-order equivalence?
+
+
+\section{Demonstrating a REPL}
+
+\section{Limitations Revealed}
+
+\appendix
+\section{Complete Code Listings}
+\subsection{lambda.pl}
+\inputminted{prolog}{lambda.pl}
+
+<<restlambda.pl>>=
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% The above is great for computing lambda sentences when they've already
+% been parsed into data our model can handle. The next section is the parser,
+% which takes a stream of ASCII from stdin and produces a nested list
+% structure for our lambda calculator.
+% Inspired very closely by a parser in the Shapiro book.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+% This (I think) takes a list of atoms like ['(', 'lambda, 'x', 'x', ')']
+% and turns it into the internal prolog represention [lambda, x, x].
+% __The tricky part was nesting parenthesis and matching them.__
+parse(['('|T], [M|L], R) :- parse(T,M,[')'|S]), parse(S,L,R).
+parse([')'|T], [], [')'|T]).
+parse([N|T], [N|L], R) :- N \= ')', N \= '(', parse(T,L,R).
+parse([],[],[]).
+parse(S,L) :- parse(S,L,[]).
+
+
+% This is the main I/O driver: it reads from stdin and tokenizes
+% things into "names" or parenthesis. That's it.
+read_s(S) :- get_char(C), read_s(C,S).
+read_s(C,S)     :- whitespace(C), get_char(D),      read_s(D, S).
+read_s(C,[C|S]) :- parens(C),     get_char(D),      read_s(D, S).
+read_s(C,[N|S]) :- name_char(C),  read_name(C,N,D), read_s(D, S).
+read_s(C,[])    :- end_of_line(C).
+
+whitespace(' ').
+parens('(').
+parens(')').
+name_char(C) :- char_code(C,N), N >= 65, N =< 90. % upper case
+name_char(C) :- char_code(C,N), N >= 97, N =< 122. % lower case.
+name_char(C) :- char_code(C,N), N == 95.
+name_char(C) :- char_code(C,N), N >= 48, N =< 57.
+end_of_line('\n').
+
+read_name(C,N,E) :-
+    get_char(D),
+    read_name_chars(S,D,E),
+    atom_chars(N,[C|S]).
+read_name_chars([C|S], C, E) :-
+    name_char(C), !, % needed for io
+    get_char(D),
+    read_name_chars(S, D, E).
+read_name_chars([],C,C) :- not(name_char(C)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% After we've calculated some lambda sentence, we'd end up with a soup of
+% lambda terms. It would be nice, from a poking-around point, to be able
+% to map the result of a lambda sentence onto a previously-defined macro.
+% Thus, instead of
+% ((and true) true) -> (lambda x x), we'd get
+% ((and true) true) -> true
+% That's sort of neat! Without actually proving anything I assume the general
+% case is at least NP-hard, but I just wanted to get something working
+% basically to sanity-check my logical commands.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+alpha_reduction(L,L) :- name(L).
+alpha_reduction(L,R) :- application(L,E1,E2),
+    alpha_reduction(E1,R1), alpha_reduction(E2,R2),
+    application(R,R1,R2).
+alpha_reduction(L,R) :- function(L),
+    gensym(alpha_,X),
+    beta_reduction(L,X,BR),
+    alpha_reduction(BR,ABR),
+    function(R,X,ABR).
+
+isomorphic(L,R) :-
+    reset_gensym(alpha_),
+    alpha_reduction(L,E),
+    reset_gensym(alpha_),
+    alpha_reduction(R,E).
+
+reverse_macro(L,[N,E],N) :- isomorphic(L,E).
+reverse_macro(L,_,L) :- name(L).
+reverse_macro(L,M,R) :- function(L,V,B),
+    reverse_macro(B,M,RB),
+    function(R,V,RB).
+reverse_macro(L,M,R) :- application(L,E1,E2),
+    reverse_macro(E1,M,R1),
+    reverse_macro(E2,M,R2),
+    application(R,R1,R2).
+
+reverse_macros(L,[],L).
+reverse_macros(L,[M|T],R) :- reverse_macro(L,M,S), reverse_macros(S,T,R).
+
+reverse_macros_star(L,D,R) :- reverse_macros(L,D,S), S \= L, reverse_macros_star(S,D,R).
+reverse_macros_star(L,D,L).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% This is just raw output helpers, designed to output the result in a way
+% that's compatible with our input-parser.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+atom_concat_list([],'').
+atom_concat_list([A|T],S) :- atom_concat_list(T,R), atom_concat(A,R,S).
+
+% this creates a "pretty printer" for lambda expressions, translating
+% from the internal prolog representation to a more scheme-like parens
+% syntax.
+internal_lambda_string(L,S) :- function(L,V,B),
+    internal_lambda_string(V,VS),
+    internal_lambda_string(B,BS),
+    atom_concat_list(['(lambda ', VS, ' ', BS, ')'],S).
+
+internal_lambda_string(L,S) :- application(L,F,A),
+    internal_lambda_string(F,FS),
+    internal_lambda_string(A,AS),
+    atom_concat_list(['(', FS, ' ', AS, ')'], S).
+
+internal_lambda_string(L,L) :- name(L).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% This is the main driver loop.
+% For ease of considering larger lambda statements, we maintain some state
+% in the "macros" list, which simply matches string names to already-parsed
+% lambda statements. I feel there's a much nicer way of doing this, but
+% it's eluded me so far.
+%
+% I won't pretend this code is as clean as can be, but it's not the focus of
+% my exposition, so I don't prioritize cleaning this up.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+apply_macro(L,[N,E],R) :-
+    function(F,N,L),
+    beta_reduction(F,E,R).
+
+apply_macros(L,[],L).
+apply_macros(L,[M|T],R) :- apply_macro(L,M,S), apply_macros(S,T,R).
+
+execute_command(['define', N, L], OD, [[N,L]|OD]).
+execute_command(['execute', L], OD,OD) :-
+    internal_lambda_string(L,LS),
+    write('Executing '), write(LS), nl,
+    apply_macros(L,OD,R),
+    internal_lambda_string(R,RS),
+    evaluate_star(R,Z),
+    internal_lambda_string(Z,ZS),
+    write(RS), nl, write('\t=>\t'), nl, write(ZS), nl,
+    % The neat thing in lambda calculus that we associate meaning with
+    % weird sentences, like (lambda x x) is true. But when we're done
+    % calculating a lambda sentence, it would be nice to express
+    % it in terms of some previously-defined macro (e.g., "true") rather
+    % than the raw lambda sentence (lambda x x). My hacky implementation
+    % is invoked here.
+    write('Reversing'), nl,
+    reverse_macros_star(Z,OD,FINAL),
+    write('Done reversing: '),
+    internal_lambda_string(FINAL,FINAL_STRING),
+    write(FINAL_STRING), nl.
+execute_command(['alpha', L], D, D) :-
+    internal_lambda_string(L,LS),
+    write('Renaming '), write(LS), nl,
+    apply_macros(L,D,R),
+    internal_lambda_string(R,RS),
+    alpha_reduction(R,A),
+    internal_lambda_string(A,AS),
+    write(RS), nl, write('\t=>\t'), nl, write(AS), nl.
+
+execute_command(['print'], [],[]) :- nl.
+execute_command(['print'], [E|D],[E|D]) :-
+    internal_lambda_string(E,S),
+    write(S), nl,
+    execute_command(['print'], D, D).
+execute_command(['halt'],_,_) :- halt.
+    
+
+main_loop(OD) :-
+    read_s(S),
+    parse(S,[L]), % I strip out the other list immediately. Why not.
+    execute_command(L,OD,ND),
+    main_loop(ND).
+
+main_loop(OD) :- write('Parse error'), nl, main_loop(OD).
+
+:- initialization main.
+main :- main_loop([]), halt.
+
+@
+
+\bibliography{library}
+\bibliographystyle{alpha}
+
+
+\end{document}
