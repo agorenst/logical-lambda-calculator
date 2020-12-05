@@ -17,6 +17,8 @@ go: $(files) $(runtests)
 
 $(files): % : book.nw
 	notangle -R$* $^ | cpif $@
+book.tex: book.nw
+	noweave -latex -n -delay book.nw > book.tex
 
 %.run : % lambda.pl
 	cat $< | while read -r line; do swipl -s lambda.pl -g "$$line" -t halt; done
@@ -24,15 +26,9 @@ $(files): % : book.nw
 %.filerun : % lambda.pl
 	cat $< | swipl -s lambda.pl -g main
 
-BetaReductionTests.sh: book.nw
-	notangle -RBetaReductionTests.sh book.nw > BetaReductionTests.sh
-	notangle -R"Beta Reduction Tests" book.nw > "Beta Reduction Tests"
-	chmod +777 BetaReductionTests.sh
 book: book.pdf
 	cp book.pdf /mnt/c/Users/agore/Desktop/prolog_scheme.pdf
 
-book.tex: book.nw
-	noweave -latex -n -delay book.nw > book.tex
 
 book.pdf: book.tex
 	latexmk -shell-escape -pdf book.tex

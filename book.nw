@@ -3,14 +3,37 @@
 \usepackage{minted}
 \usepackage{syntax}
 
-\title{Lambda Calculus Through Prolog}
+\title{Logical Lambda Calculator \\ \large Part 1}
 \author{Aaron Gorenstein}
 \date{January 1, 2021}
 
 \begin{document}
-\maketitle
-\section{Introduction}
 
+\maketitle
+
+\begin{abstract}
+This provides a view of $\lambda$-calculus through the lense of logical programming.
+The intended audience is an experienced computer scientist with an interest in different programming language paradigms.
+A familiarity of $\lambda$-calculus and prolog is assumed.
+The document strives to present what is hopefully an interesting program: a means of evaluating $\lambda$-expressions using prolog.
+The motivation for this document was a study on some excellent books\cite{lambdacalc,artofprolog} on both these topics.
+What value this study provides is largely credited to those books; what errors found here are my own fault.
+\end{abstract}
+
+\section{Introduction}
+The $\lambda$-calculus is a famous and fundamental model of computation.
+It realizes computation through \emph{function application}.
+First-order predicate-logic is another equally fundamental model of computation.
+In the language prolog, it enables computation through \emph{unification}.
+
+To be clear: These two models of computation realize computation through different mechanisms.
+In the coarsest terms, $\lambda$-calculus iteratively applies variable substitution (we shall see this ultimately as $\beta$-reduction) to produce a quiescent $\lambda$-term; this represents the result of the computation.
+For the first-order predicate-logic case, we will search in a depth-first-search-like manner through a possible database of facts to find the most general answer to a query. Whatever this search finds--or that it cannot find an answer--represents the result of the computation.
+
+By implementing the means of evaluating $\lambda$-calculus expressions in prolog, we shall hopefully gain a deeper insight--or at least appreciation--for the differences here.
+
+\section{Representing $\lambda$-Calculus in Prolog}
+The grammar for $\lambda$-calculus\cite{lambdacalc} is strikingly self-contained:
 \begin{grammar}
 <expression> ::= <name> \alt <function> \alt <application>
 
@@ -18,7 +41,7 @@
 
 <application> ::= ( <expression> <expression> )
 \end{grammar}
-
+This can be copied almost verbatim into our prolog code:
 <<Initial Lambda Calculus Definitions>>=
 expression(L) :- name(L).
 expression(L) :- function(L).
@@ -30,17 +53,48 @@ application([E1, E2]) :- expression(E1), expression(E2).
 
 name(X) :- not(is_list(X)), ground(X), X \= lambda.
 @
+Observe that we also obligate ourselves to define [[name(X)]], not present in the grammar.
 
+As we will need to manipulate lambda expressions, we define two more sentences:
 <<Initial Lambda Calculus Definitions>>=
 function([lambda, V, B], V, B) :- function([lambda, V, B]).
-
 application([E1, E2], E1, E2) :- application([E1, E2]).
 @
+A crucial detail is that the variable names are repeated in these sentences.
+Through unification, these definitions allow us to ``crack open'' functions and their component parts.
+These same sentences, by the bidirectional nature of unification, also allow us to build up these compound values given only their components.
+This is the first of many neat demonstrations of the expressive power of prolog.
 
-<<Beta Reduction>>=
-beta_reduction(F,A,R) :- function(F,V,B), replace(V,B,A,R).
+We can demonstrate how these clauses work.
+Prolog can help verify that the following sentences are true:
+<<Initial.tests>>=
+name(x).
+function([lambda, a, a]).
+application([a, b]).
+application([[lambda, a, a], b]).
+application([[lambda, a, a], [lambda, c, [lambda, c, c]]]).
 @
+We can build a function [[F]] like so:
+<<Initial.tests>>=
+function(F, x, [lambda, x, y]), write(F), nl.
+@
+This outputs:
+[[ [lambda,x,[lambda,x,y]] ]].
+Isn't that neat?
 
+
+\subsection{Implementing $\beta$-Reduction}
+The fundamental action of $\lambda$-calculus is surely the $\beta$-reduction, whereby all instances of the bound variable is replaced by the applicant of the function.
+We define this as:
+<<Beta Reduction>>=
+beta_reduction(F, A, R) :- function(F, V, B), replace(V, B, A, R).
+@
+Read as English, we would say: ``the $\beta$ reduction of [[F]], when applied to [[A]], results in [[R]].
+This is true when [[F]] is some function with bound\footnote{right?} variable [[V]] and a body [[B]], and [[R]] is the result of replacing all instances of [[V]] in [[B]] with [[A]].''
+By coarse analogy to imperative languages: the first term\footnote{right?} of the sentence is both type-checking [[F]] that it is a function, as well as accessing its fields [[V]] and [[B]].
+The second term\footnote{right?} essentially has the out-parameter [[R]], the result of replacing [[V]] in [[B]] with [[A]].
+
+Let us see how [[replace]] is realized in prolog:
 <<Replace Predicate>>=
 replace(V,V,A,A) :- name(V).
 replace(V,W,_,W) :- name(W), V \= W.
@@ -53,14 +107,54 @@ replace(V,P,A,R) :- application(P,E1,E2),
     replace(V,E2,A,R2),
     application(R,R1,R2).
 @
+We shall consider each sentence in turn.
+
+The first definition\footnote{right?} is the core replacement: our body [[B]] \emph{is} the bound\footnote{.} variable [[B]], and so we should set our out-parameter [[R]] to be exactly [[A]].
+This ``setting'' is of course not what happens in prolog.
+Rather it should be understood as saying that, when [[V]] is a name, a valid replacement is when [[V]] and [[B]] are the same, and [[A]] and [[R]] are the same.
+The second definition captures the case when the body of the function is a variable [[W]], but one that is \emph{not} the same as our bound variable [[V]].
+In that case, the result is that no replacement should take place: we unify the result with the (unchanged) body [[W]].
+
+These two definitions play a role in the following examples of $\beta$-reduction:
+<<BetaReductions.tests>>=
+beta_reduction([lambda, x, x], a, a).
+beta_reduction([lambda, x, y], a, y).
+@
+Observe how the first case, when we ``get to'' the replacement clause, [[V=x]] and [[B=x]]. Consequently, we set [[R]] to be the applicant [[a]].
+In the second case, there is no such matching ([[V \= W]]), and so [[R]] is set to the unchanged body [[y]].
+These two lines are literally explicit queries one can ask prolog--the expectation is that prolog should report ``yes'' for both as we have implemented everything correctly.
+
+So we have tested all possible cases when the body of our function is simply a name, and we can turn to other cases.
+We can see that there are two cases when we the body of function is itself a nested function.
+The first is when our nested function \emph{itself} defines the symbol [[V]].
+That is, we have a $\lambda$ term like: $\lambda x.\lambda.x(x y)$.
+We have the expectation that something like, say, $\lambda x.\lambda x (x y) a b \to (b y)$, rather than $(a y)$.
+This is ``shadowing''\footnote{right?}, and it is realized in this third definition by simply\ldots not replacing anything.
+
+We can realize this in tests like so:
+<<BetaReductions.tests>>=
+beta_reduction([lambda, x, [lambda, x, [x, y]]], a, [lambda, x, [x, y]]).
+@
+
+The second definition for when our second parameter is a function is interesting.
+We recursively replace all instances inside the \emph{body} of [[F]], [[B]], and this yields us a new expression [[S]].
+We use this result [[S]] to compose the body of the resulting, upper-level function.
 
 <<BetaReductions.tests>>=
-beta_reduction([lambda, x, x], a, R), R == a.
-beta_reduction([lambda, x, x], b, R), R \= a.
+beta_reduction([lambda, x, [lambda, y, [x, y]]], a, [lambda, y, [a, y]]).
+@
+
+Lastly, applications, lacking any immediate name context, are easy.
+
+We can make sure these work in higher-level contexts:
+<<BetaReductions.tests>>=
 beta_reduction([lambda, x, x], [lambda, y, y], R), R == [lambda, y, y].
 beta_reduction([lambda, x, [x, z]], [lambda, y, y], R), R == [[lambda, y, y], z].
 @
 
+\subsection{Evaluation}
+The $\beta$-reduction is the fundamental action through which we define what it is to \emph{evaluate} a $\lambda$-expression.
+Let us do that now:
 <<Evaluate>>=
 evaluate(L, L) :- name(L).
 evaluate(L, L) :- function(L).
@@ -73,14 +167,66 @@ evaluate(L, R) :- application(L, E1, E2), application(E1),
     application(S, R1, E2),
     evaluate(S, R).
 @
+Similar to before, we consider each possible ``type'' of $\lambda$-expression.
+The evaluation of a name, or a function, leaves those types unchanged.
+It is only when we encounter an \emph{application} is the result of evaluation not (necessarily) equal to the input.
+When the applicator (the left-hand-side of the application pair, i.e., [[E1]]) is a name, there is nothing for us to do.
+If the applicator is a function--hooray, this is the entry point into the $\beta$-reduction and we continue.
+If the applicator itself is an application pair (something like $((a b) c)$, we first need to evaluate the pair $(a b)$ to yield [[R1]], and then recurse with that updated applicator.
 
-<<Sugaring>>=
+Observe the tail-recursive definitions of [[evaluate]] for the [[function(E1)]] and [[application(E1)]] cases.
+
+Observe also that we are doing \emph{normal-order} evaluation, instead of \emph{applicative-order} evaluation.
+This can be demonstrated with the following claim:
+<<EvaluationTests.tests>>=
+evaluate([ [lambda, x, [lambda, y, [y, x]]], [[lambda, a, [a, a]], b] ] , [lambda, y, [y, [[lambda, a, [a, a]], b]]]).
+@
+Observe how we don't evaluate the self-apply function.
+
+In a sense, we have achieved our goal.
+We have a (rather awkward) way of writing arbitrary lambda expressions and evaluate them.
+
+By analogy, I would suggest we have something like the ALU in a CPU.
+We can do the fundamental operations we're interested in, but lack memory or any reasonable interface to actually deploy this computation.
+The following section we introduce an \emph{extremely} bare-bones environment so that we may more easily introduce interesting computation.
+There is still quite a distance to, say, Scheme (and indeed, we are not going to be getting there),
+but this will contain a few more interesting applications of prolog to illuminate interesting things in $\lambda$-calculus.
+
+\section{Introducing an Environment}
+The simplest environment would be to ``save'' an atom, such as [[identity]], and associate it with a value, such as [[[lambda, x, x]]].
+In cases where we see the (unbound) atom [[identity]], we would replace it with the value.
+As this does not truly add any computational power, this sort of machinery is conventionally called ``sugaring'' (and its removal, ``desugaring'').
+
+<<Desugaring>>=
 desugar(L,[N,E],R) :-
     function(F,N,L),
     beta_reduction(F,E,R).
 
 desugar_all(L,[],L).
 desugar_all(L,[M|T],R) :- desugar(L,M,S), desugar_all(S,T,R).
+
+desugar_eval(L, D, L) :- desugar_all(L, D, L), evaluate(L, L).
+desugar_eval(L, D, R) :- desugar_all(L, D, S), S \= L, desugar_eval(S, D, R).
+desugar_eval(L, D, R) :- evaluate(L, S), S \= L, desugar_eval(S, D, R).
+@
+
+TODO: include a demonstration that this doesn't quite do what we want--we will need to ``resugar'' our result.
+
+TODO: demonstrate we need $\alpha$-conversion, too.
+
+<<Resugaring>>=
+resugar(L,[N,E],N) :- isomorphic(L, E).
+resugar(L,_,L).
+resugar_all(L, [], L).
+resugar_all(L, [M|T], R) :- resugar(L, M, S), resugar_all(S, T, R).
+
+resugar_eval(L, D, L) :- resugar_all(L, D, L), evaluate(L, L).
+resugar_eval(L, D, R) :- resugar_all(L, D, S), S \= L, resugar_eval(S, D, R).
+resugar_eval(L, D, R) :- evaluate(L, S), S \= L, resugar_eval(S, D, R).
+@
+
+<<Environmental Eval>>=
+environment_eval(L, D, R) :- desugar_eval(L, D, S), resugar_eval(S, D, R).
 @
 
 <<Alpha Reduction>>=
@@ -104,26 +250,20 @@ isomorphic(A, B) :- canon(A, C), canon(B, C).
 isomorphic([lambda, x, x], [lambda, y, y]).
 @
 
-<<Resugaring>>=
-resugar(L,[N,E],N) :- isomorphic(L, E).
-resugar(L,_,L).
-resugar_all(L, [], L).
-resugar_all(L, [M|T], R) :- resugar(L, M, S), resugar_all(S, T, R).
-@
-
 <<FirstLoop.filetest>>=
 (define true (lambda x (lambda y x)))
 (define false (lambda x (lambda y y)))
 (define and (lambda x (lambda y ((x y) false))))
 (define not (lambda x ((x false) true)))
 (define nand (lambda x (lambda y (not ((and x) y)))))
-(print)
 (execute ((nand true) true))
 (execute ((nand true) false))
 (execute ((nand false) true))
 (execute ((nand false) false))
 (halt)
 @
+
+Now let's show that ``not nand'' is equal to ''and''.
 
 <<Main Loop>>=
 % This (I think) takes a list of atoms like ['(', 'lambda, 'x', 'x', ')']
@@ -196,20 +336,14 @@ execute_command(['execute', L], OD,OD) :-
     internal_lambda_string(L,LS),
     write('Executing '),
     %write(LS), nl,
-    desugar_all(L,OD,R),
+    desugar_eval(L, OD, Z),
+    %desugar_all(L,OD,R),
     %write(R), nl,
     %internal_lambda_string(R,RS),
     %write(RS), nl,
-    evaluate(R,Z),
+    %evaluate(R,Z),
     internal_lambda_string(Z,ZS),
     write(LS), nl, write('\t=>\t'), nl, write(ZS), nl,
-    % The neat thing in lambda calculus that we associate meaning with
-    % weird sentences, like (lambda x x) is true. But when we're done
-    % calculating a lambda sentence, it would be nice to express
-    % it in terms of some previously-defined macro (e.g., "true") rather
-    % than the raw lambda sentence (lambda x x). My hacky implementation
-    % is invoked here.
-    %write('Reversing'), nl,
     resugar_all(Z,OD,FINAL),
     %write('Done reversing: '),
     internal_lambda_string(FINAL,FINAL_STRING),
@@ -254,7 +388,7 @@ main :- main_loop([]), halt.
 
 <<Alpha Reduction>>
 
-<<Sugaring>>
+<<Desugaring>>
 <<Resugaring>>
 
 <<Main Loop>>
@@ -268,6 +402,9 @@ evaluate([[lambda, x, [x, x]], [lambda, x, x]], R), R == [lambda, x, x].
 \appendix
 \section{Complete Code Listings}
 \subsection{lambda.pl}
-\inputminted{prolog}{lambda.pl}
+\inputminted[linenos=true]{prolog}{lambda.pl}
+
+\bibliography{library}
+\bibliographystyle{alpha}
 
 \end{document}
