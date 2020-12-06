@@ -265,34 +265,48 @@ isomorphic([lambda, x, x], [lambda, y, y]).
 
 Now let's show that ``not nand'' is equal to ''and''.
 
-<<Main Loop>>=
-% This (I think) takes a list of atoms like ['(', 'lambda, 'x', 'x', ')']
-% and turns it into the internal prolog represention [lambda, x, x].
-% __The tricky part was nesting parenthesis and matching them.__
-parse(['('|T], [M|L], R) :- parse(T,M,[')'|S]), parse(S,L,R).
-parse([')'|T], [], [')'|T]).
-parse([N|T], [N|L], R) :- N \= ')', N \= '(', parse(T,L,R).
-parse([],[],[]).
-parse(S,L) :- parse(S,L,[]).
+\section{Parsing}
+We have been looking at $\lambda$s in an annoying way, as [[[lambda, N, B]]].
+It would be nice if we could write that as [[(lambda N B)]], for instance.
+We need a parser.
 
+NOTE: This is an example where not all ``sugar'' can be implemented within $\lambda$-calculus.
+Obviously here we need I/O hooks, but later on we can't really excise parens except by writing a different parser (which we will not do).
 
-% This is the main I/O driver: it reads from stdin and tokenizes
-% things into "names" or parenthesis. That's it.
+In classic parsing style, we'll implement a tokenizer, and then a grammar.
+
+\subsection{Tokenizer}
+
+<<Tokenizer>>=
 read_s(S) :- get_char(C), read_s(C,S).
 read_s(C,S)     :- whitespace(C), get_char(D),      read_s(D, S).
 read_s(C,[C|S]) :- parens(C),     get_char(D),      read_s(D, S).
 read_s(C,[N|S]) :- name_char(C),  read_name(C,N,D), read_s(D, S).
 read_s(C,[])    :- end_of_line(C).
+@
+The tokenizer is a driver that reads in new characters, and matches them into tokens: parens, names, or end-of-line.
+The clause [[get_char]] is the entry point into the outside world.
+Again think of the non-chronological perspective. It's almost like we're building up [[S]].
+Observe that we use the \emph{goal} to basically append to [[S]].
 
+When we see an end-of-line, the result of the parse there is the empty list.
+That makes sense.
+<<Tokenizer>>=
+end_of_line('\n').
+@
+
+The other ``obvious'' tokens include:
+<<Tokenizer>>=
 whitespace(' ').
 parens('(').
 parens(')').
-name_char(C) :- char_code(C,N), N >= 65, N =< 90. % upper case
-name_char(C) :- char_code(C,N), N >= 97, N =< 122. % lower case.
-name_char(C) :- char_code(C,N), N == 95.
-name_char(C) :- char_code(C,N), N >= 48, N =< 57.
-end_of_line('\n').
+@
 
+The only ``interesting'' token, then, is names.
+How do we do this? I believe I'm indebted to\cite{artofprolog} for this, but I don't quite recall.
+Something to review.
+
+<<Read Name>>=
 read_name(C,N,E) :-
     get_char(D),
     read_name_chars(S,D,E),
@@ -302,6 +316,57 @@ read_name_chars([C|S], C, E) :-
     get_char(D),
     read_name_chars(S, D, E).
 read_name_chars([],C,C) :- not(name_char(C)).
+@
+
+That's the thing to review. For simple annoying table lookups:
+<<Read Name>>=
+name_char(C) :- char_code(C,N), N >= 65, N =< 90. % upper case
+name_char(C) :- char_code(C,N), N >= 97, N =< 122. % lower case.
+name_char(C) :- char_code(C,N), N == 95.
+name_char(C) :- char_code(C,N), N >= 48, N =< 57.
+@
+
+\subsection{Parser}
+Now given a sequence of tokens, we can distill them into the nested lists we want for our internal representation.
+<<Parser>>=
+parse([')'|T], [], [')'|T]).
+parse(['('|T], [M|L], R) :- parse(T,M,[')'|S]), parse(S,L,R).
+
+parse([N|T], [N|L], R) :- N \= ')', N \= '(', parse(T,L,R).
+
+parse([],[],[]).
+parse(S,L) :- parse(S,L,[]).
+@
+How does this work? That's an excellent question.
+The entry point is obviously the last line.
+The base case of the penultimate line is easy enough to note, though it is not particularly illuminating.
+
+The main unintuitive machinery is the first two definitions of [[parse/3]].
+The first is saying that any sequence of tokens [[S]] that \emph{begins} with [[')']] (obviously, in the non-recursive case, we're in trouble),
+will unify with a remainder that's the same value.
+More mechanically: when we see a tail of tokens that begins with a close-parens, ``store'' it as the third parameter.
+The second then says, when we first see an [['(']], we'll break things into 2 chunks:
+\begin{enumerate}
+\item The item [[M]] is the part ``inside'' the parens we just started: this is because it
+unifies as part of [[parse(T, M, [')'|S])]].
+See how [[T]] is the (sub)sequence immediately after the '(' we saw.
+The remainder [[S]] are those tokens remaining in the stream after we've matched the '(' with that ')'.
+\item That suffix [[S]] is in turn parsed, yielding the second half of the parse [[L]] and the remainder [[R]].
+\end{enumerate}
+See ultimately how the middle parameter is [[[M|L]]], the union of the term [[M]] (inside the parens) and [[L]] (everything after this parens).
+It may take some thinking, but this handles the recursive case.
+Observe how [[M]] is an atom that is being pushed onto the list [[L]].
+
+The line that stands alone handles the non-parens tokens: we simply push that [[N]] onto our list and continue.
+
+From there, consider the first [[parse/3]] instance.
+When, in our stream of tokens, we encounter and open-parens, we will parse the tail and unify that tail with M,
+pushing [[')']] onto the stack S.
+
+<<Main Loop>>=
+<<Tokenizer>>
+<<Read Name>>
+<<Parser>>
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % This is just raw output helpers, designed to output the result in a way
