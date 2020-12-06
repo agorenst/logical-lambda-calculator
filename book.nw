@@ -2,6 +2,7 @@
 \usepackage{noweb}
 \usepackage{minted}
 \usepackage{syntax}
+\usepackage{cleveref}
 
 \title{Logical Lambda Calculator \\ \large Part 1}
 \author{Aaron Gorenstein}
@@ -197,6 +198,7 @@ The simplest environment would be to ``save'' an atom, such as [[identity]], and
 In cases where we see the (unbound) atom [[identity]], we would replace it with the value.
 As this does not truly add any computational power, this sort of machinery is conventionally called ``sugaring'' (and its removal, ``desugaring'').
 
+TODO: CAN THIS BE JUST MADE INTO A FOLDL? SEE ALSO RESUGAR.
 <<Desugaring>>=
 desugar(L,[N,E],R) :-
     function(F,N,L),
@@ -363,6 +365,8 @@ From there, consider the first [[parse/3]] instance.
 When, in our stream of tokens, we encounter and open-parens, we will parse the tail and unify that tail with M,
 pushing [[')']] onto the stack S.
 
+TODO: TEST THAT.
+
 <<Main Loop>>=
 <<Tokenizer>>
 <<Read Name>>
@@ -373,6 +377,7 @@ pushing [[')']] onto the stack S.
 % that's compatible with our input-parser.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% TODO: CAN THIS BE JUST MADE INTO A FOLDL?
 atom_concat_list([],'').
 atom_concat_list([A|T],S) :- atom_concat_list(T,R), atom_concat(A,R,S).
 
@@ -397,6 +402,8 @@ execute_command([compute, L], OD, OD) :-
     write(RS),
     nl.
 execute_command(['define', N, L], OD, [[N,L]|OD]).
+
+% TODO: THIS CAN BE MADE MUCH, MUCH NEATER, I BET.
 execute_command(['execute', L], OD,OD) :-
     internal_lambda_string(L,LS),
     write('Executing '),

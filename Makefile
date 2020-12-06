@@ -17,8 +17,9 @@ go: $(files) $(runtests)
 
 $(files): % : book.nw
 	notangle -R$* $^ | cpif $@
-book.tex: book.nw
-	noweave -latex -n -delay book.nw > book.tex
+book.tex: book.nw $(files)
+	./myweave.sh > book.tex
+#noweave -latex -n -delay book.nw > book.tex
 
 %.run : % lambda.pl
 	cat $< | while read -r line; do swipl -s lambda.pl -g "$$line" -t halt; done
