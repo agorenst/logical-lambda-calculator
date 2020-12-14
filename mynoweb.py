@@ -1,4 +1,4 @@
-  
+
 import sys
 from collections import defaultdict
 chunks = defaultdict(list)
@@ -31,28 +31,36 @@ for line in sys.stdin:
         chunks[chunkNum].append(line)
 
 # Now we want to propogate all the language information.
+
+
 def IsCodeChunk(chunk):
     return chunk[0].split()[:2] == ['@begin', 'code']
+
+
 def ChunkDefn(chunk):
     for line in chunk:
         if line.split()[:1] == ['@defn']:
             return line.split()[1:]
     print chunk
 
+
 def ChunkUses(chunk):
     for line in chunk:
         if line.split()[:1] == ['@use']:
             yield line.split()[1:]
+
 
 def ChunkName(chunk):
     for line in chunk:
         if line.split()[:1] == ['@defn']:
             return line.split()[1:]
 
+
 def FindChunksByNameList(namelist, chunks):
     for c in chunks.keys():
         if ChunkName(chunks[c]) == namelist:
             yield c
+
 
 def MakeLanguageMap(chunks):
     needWork = True
@@ -86,11 +94,13 @@ def MakeLanguageMap(chunks):
             else:
                 for u in ChunkUses(chunks[n]):
                     for uid in FindChunksByNameList(u, chunks):
-                        assert(uid not in languageMap or languageMap[uid] == languageMap[n])
+                        assert(
+                            uid not in languageMap or languageMap[uid] == languageMap[n])
                         if uid not in languageMap:
                             needWork = True
                         languageMap[uid] = languageMap[n]
     return languageMap
+
 
 def SetChunkLanguage(chunk, language):
     newChunk = []
@@ -110,10 +120,12 @@ for n in chunks.keys():
     if not IsCodeChunk(chunks[n]):
         continue
     if n not in languageMap:
-        continue # ???
+        continue  # ???
     chunks[n] = SetChunkLanguage(chunks[n], languageMap[n])
 
 # now we ENTIRELY REMOVE the @code marker, and change it to text.
+
+
 def CodeChunkToFigChunk(chunk):
     newChunk = []
     chunkName = ""
@@ -136,7 +148,13 @@ def CodeChunkToFigChunk(chunk):
             continue
         if line.split()[:1] == ['@use']:
             useName = ' '.join(line.split()[1:]).rstrip()
-            newChunk.append('@text // insert $\cref{'+useName+'}$ (' + useName +')\n')
+
+            # newChunk.append(
+            # '@text // insert $\cref{'+useName+'}$ (' + useName + ')\n')
+
+            newChunk.append(
+                '@text % insert $\cref{'+useName+'}$ (' + useName + ')\n')
+
             #newChunk.append('@text // Code from \cref{'+useName+'} (' + useName + ')\n')
             continue
         # transform from code to docs. Easy peasy.
@@ -144,7 +162,8 @@ def CodeChunkToFigChunk(chunk):
             line = line.replace('code', 'docs')
         if line.split()[:2] == ['@end', 'code']:
             newChunk.append('@text \end{minted}\n@nl\n')
-            newChunk.append('@text \caption{'+chunkName.replace('_', '\\_')+'}\n@nl\n')
+            newChunk.append(
+                '@text \caption{'+chunkName.replace('_', '\\_')+'}\n@nl\n')
             #newChunk.append('@text \label{'+chunkName.replace(' ', ':')+'}\n@nl\n')
             newChunk.append('@text \label{'+chunkName+'}\n@nl\n')
             newChunk.append('@text \end{listing}\n@nl\n')
@@ -152,11 +171,12 @@ def CodeChunkToFigChunk(chunk):
         newChunk.append(line)
     return newChunk
 
+
 for n in chunks.keys():
     if not IsCodeChunk(chunks[n]):
         continue
     if n not in languageMap:
-        continue # ???
+        continue  # ???
     chunks[n] = CodeChunkToFigChunk(chunks[n])
 
 

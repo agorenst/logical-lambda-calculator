@@ -2,6 +2,7 @@
 \usepackage{noweb}
 \usepackage{minted}
 \usepackage{syntax}
+\usepackage{hyperref}
 \usepackage{cleveref}
 
 \title{Logical Lambda Calculator \\ \large Part 1}
@@ -47,17 +48,14 @@ This can be copied almost verbatim into our prolog code:
 expression(L) :- name(L).
 expression(L) :- function(L).
 expression(L) :- application(L).
-
 function([lambda, V, B]) :- name(V), expression(B).
-
 application([E1, E2]) :- expression(E1), expression(E2).
-
 name(X) :- not(is_list(X)), ground(X), X \= lambda.
 @
 Observe that we also obligate ourselves to define [[name(X)]], not present in the grammar.
 
 As we will need to manipulate lambda expressions, we define two more sentences:
-<<Initial Lambda Calculus Definitions>>=
+<<Additional Lambda Calculus Definitions>>=
 function([lambda, V, B], V, B) :- function([lambda, V, B]).
 application([E1, E2], E1, E2) :- application([E1, E2]).
 @
@@ -68,7 +66,7 @@ This is the first of many neat demonstrations of the expressive power of prolog.
 
 We can demonstrate how these clauses work.
 Prolog can help verify that the following sentences are true:
-<<Initial.tests>>=
+<<Initial1.tests>>=
 name(x).
 function([lambda, a, a]).
 application([a, b]).
@@ -76,7 +74,7 @@ application([[lambda, a, a], b]).
 application([[lambda, a, a], [lambda, c, [lambda, c, c]]]).
 @
 We can build a function [[F]] like so:
-<<Initial.tests>>=
+<<Initial2.tests>>=
 function(F, x, [lambda, x, y]), write(F), nl.
 @
 This outputs:
@@ -198,37 +196,48 @@ The simplest environment would be to ``save'' an atom, such as [[identity]], and
 In cases where we see the (unbound) atom [[identity]], we would replace it with the value.
 As this does not truly add any computational power, this sort of machinery is conventionally called ``sugaring'' (and its removal, ``desugaring'').
 
-TODO: CAN THIS BE JUST MADE INTO A FOLDL? SEE ALSO RESUGAR.
 <<Desugaring>>=
-desugar(L,[N,E],R) :-
+desugar([N,E], L, R) :-
     function(F,N,L),
     beta_reduction(F,E,R).
 
-desugar_all(L,[],L).
-desugar_all(L,[M|T],R) :- desugar(L,M,S), desugar_all(S,T,R).
-
-desugar_eval(L, D, L) :- desugar_all(L, D, L), evaluate(L, L).
-desugar_eval(L, D, R) :- desugar_all(L, D, S), S \= L, desugar_eval(S, D, R).
-desugar_eval(L, D, R) :- evaluate(L, S), S \= L, desugar_eval(S, D, R).
+desugar_all(L, D, R) :- foldl(desugar, D, L, R).
 @
 
 TODO: include a demonstration that this doesn't quite do what we want--we will need to ``resugar'' our result.
 
 TODO: demonstrate we need $\alpha$-conversion, too.
 
+We want to map the resugaring, bottom-up, over the tree.
+We are simply reversing beta reduction:
 <<Resugaring>>=
-resugar(L,[N,E],N) :- isomorphic(L, E).
-resugar(L,_,L).
-resugar_all(L, [], L).
-resugar_all(L, [M|T], R) :- resugar(L, M, S), resugar_all(S, T, R).
+resugar([N, E], L, N) :- isomorphic(L, E).
+resugar(M, L, R) :- function(L, V, B),
+    resugar(M, B, SB),
+    function(R, V, SB).
+resugar(M, L, R) :- application(L, E1, E2),
+    resugar(M, E1, SE1),
+    resugar(M, E2, SE2),
+    application(R, SE1, SE2).
+resugar(_, L, L).
 
-resugar_eval(L, D, L) :- resugar_all(L, D, L), evaluate(L, L).
-resugar_eval(L, D, R) :- resugar_all(L, D, S), S \= L, resugar_eval(S, D, R).
-resugar_eval(L, D, R) :- evaluate(L, S), S \= L, resugar_eval(S, D, R).
-@
+resugar_all(L, D, R) :- foldl(resugar, D, L, S), S \= L, resugar_all(S, D, R).
+resugar_all(L, _, L).
 
-<<Environmental Eval>>=
-environment_eval(L, D, R) :- desugar_eval(L, D, S), resugar_eval(S, D, R).
+% resugar(L, _, L) :- name(L).
+% resugar(L, D, R) :- function(L, V, B),
+%     resugar(B, D, SB),
+%     function(I, V, SB),
+%     resugar_match(I, D, R).
+% resugar(L, D, R) :- application(L, E1, E2),
+%     resugar(E1, D, RE1),
+%     resugar(E2, D, RE2),
+%     application(I, RE1, RE2),
+%     resugar_match(I, D, R).
+% resugar_match(L, [], L).
+% resugar_match(L, [[N, E]|T], R) :- isomorphic(L, E), resugar_match(N, T, R).
+% resugar_match(L, [_|T], R) :- resugar_match(L, T, R).
+% resugar_all(L, D, R) :- resugar(L, D, R).
 @
 
 <<Alpha Reduction>>=
@@ -265,6 +274,26 @@ isomorphic([lambda, x, x], [lambda, y, y]).
 (halt)
 @
 
+<<SecondLoop.filetest>>=
+(define true (lambda x (lambda y x)))
+(define false (lambda x (lambda y y)))
+(define and (lambda x (lambda y ((x y) false))))
+(define not (lambda x ((x false) true)))
+(define nand (lambda x (lambda y (not ((and x) y)))))
+(execute nand)
+(execute (nand true))
+(execute (lambda x (lambda y (((not nand) x) y))))
+(define nnand (lambda x (lambda y (not ((nand x) y)))))
+(execute (lambda x (lambda y (not ((nand x) y)))))
+(execute ((nnand true) true))
+(execute ((nnand true) false))
+(execute ((nnand false) true))
+(execute ((nnand false) false))
+(halt)
+@
+
+NOTE: Putting ``not'' in front of ``nand'' evaluates things in the wrong order, things aren't commutative like I'd like.
+
 Now let's show that ``not nand'' is equal to ''and''.
 
 \section{Parsing}
@@ -293,15 +322,13 @@ Observe that we use the \emph{goal} to basically append to [[S]].
 
 When we see an end-of-line, the result of the parse there is the empty list.
 That makes sense.
-<<Tokenizer>>=
-end_of_line('\n').
-@
 
 The other ``obvious'' tokens include:
-<<Tokenizer>>=
+<<Simple Tokens>>=
 whitespace(' ').
 parens('(').
 parens(')').
+end_of_line('\n').
 @
 
 The only ``interesting'' token, then, is names.
@@ -318,24 +345,21 @@ read_name_chars([C|S], C, E) :-
     get_char(D),
     read_name_chars(S, D, E).
 read_name_chars([],C,C) :- not(name_char(C)).
-@
 
-That's the thing to review. For simple annoying table lookups:
-<<Read Name>>=
 name_char(C) :- char_code(C,N), N >= 65, N =< 90. % upper case
 name_char(C) :- char_code(C,N), N >= 97, N =< 122. % lower case.
 name_char(C) :- char_code(C,N), N == 95.
 name_char(C) :- char_code(C,N), N >= 48, N =< 57.
 @
 
+That's the thing to review. For simple annoying table lookups:
+
 \subsection{Parser}
 Now given a sequence of tokens, we can distill them into the nested lists we want for our internal representation.
 <<Parser>>=
 parse([')'|T], [], [')'|T]).
 parse(['('|T], [M|L], R) :- parse(T,M,[')'|S]), parse(S,L,R).
-
 parse([N|T], [N|L], R) :- N \= ')', N \= '(', parse(T,L,R).
-
 parse([],[],[]).
 parse(S,L) :- parse(S,L,[]).
 @
@@ -367,74 +391,44 @@ pushing [[')']] onto the stack S.
 
 TODO: TEST THAT.
 
+We also want to print out our internal lambda representation the same way.
+<<Lambda Printer>>=
+lambda_to_atom(L, L) :- name(L).
+lambda_to_atom(L, R) :- function(L, V, B),
+    lambda_to_atom(B, BS),
+    atomic_list_concat(['(lambda ', V, ' ', BS, ')'], '', R).
+lambda_to_atom(L, R) :- application(L, E1, E2),
+    lambda_to_atom(E1, R1),
+    lambda_to_atom(E2, R2),
+    atomic_list_concat(['(', R1, ' ', R2, ')'], '', R).
+@
+
+Finally, we want to present a simple user-interactive loop.
+Don't call it a repl.
+We have a few different commands we can unify against:
+<<Repl Commands>>=
+execute_command(['define', N, L], D, [[N,L]|D]).
+execute_command(['execute', L], D,D) :-
+    desugar_all(L, D, DL),
+    evaluate(DL, R),
+    resugar_all(R,D,SR),
+    lambda_to_atom(SR,O),
+    write(O), nl.
+execute_command(['halt'],_,_) :- halt.
+@
+
+TODO: Parsing lambda strings back and forth -- couldn't that be a single 3-parameter clause?
+Similar with sugaring/desugaring. The whole point of prolog is the magic fact that there's no time.
+
+
 <<Main Loop>>=
 <<Tokenizer>>
+<<Simple Tokens>>
 <<Read Name>>
 <<Parser>>
+<<Lambda Printer>>
+<<Repl Commands>>
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% This is just raw output helpers, designed to output the result in a way
-% that's compatible with our input-parser.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-% TODO: CAN THIS BE JUST MADE INTO A FOLDL?
-atom_concat_list([],'').
-atom_concat_list([A|T],S) :- atom_concat_list(T,R), atom_concat(A,R,S).
-
-% this creates a "pretty printer" for lambda expressions, translating
-% from the internal prolog representation to a more scheme-like parens
-% syntax.
-internal_lambda_string(L,S) :- function(L,V,B),
-    internal_lambda_string(V,VS),
-    internal_lambda_string(B,BS),
-    atom_concat_list(['(lambda ', VS, ' ', BS, ')'],S).
-
-internal_lambda_string(L,S) :- application(L,F,A),
-    internal_lambda_string(F,FS),
-    internal_lambda_string(A,AS),
-    atom_concat_list(['(', FS, ' ', AS, ')'], S).
-
-internal_lambda_string(L,L) :- name(L).
-
-execute_command([compute, L], OD, OD) :-
-    evaluate(L, R),
-    internal_lambda_string(R, RS),
-    write(RS),
-    nl.
-execute_command(['define', N, L], OD, [[N,L]|OD]).
-
-% TODO: THIS CAN BE MADE MUCH, MUCH NEATER, I BET.
-execute_command(['execute', L], OD,OD) :-
-    internal_lambda_string(L,LS),
-    write('Executing '),
-    %write(LS), nl,
-    desugar_eval(L, OD, Z),
-    %desugar_all(L,OD,R),
-    %write(R), nl,
-    %internal_lambda_string(R,RS),
-    %write(RS), nl,
-    %evaluate(R,Z),
-    internal_lambda_string(Z,ZS),
-    write(LS), nl, write('\t=>\t'), nl, write(ZS), nl,
-    resugar_all(Z,OD,FINAL),
-    %write('Done reversing: '),
-    internal_lambda_string(FINAL,FINAL_STRING),
-    write(FINAL_STRING), nl.
-execute_command(['alpha', L], D, D) :-
-    internal_lambda_string(L,LS),
-    write('Renaming '), write(LS), nl,
-    desugar_all(L,D,R),
-    internal_lambda_string(R,RS),
-    alpha_reduction(R,A),
-    internal_lambda_string(A,AS),
-    write(RS), nl, write('\t=>\t'), nl, write(AS), nl.
-
-execute_command(['print'], [],[]) :- nl.
-execute_command(['print'], [E|D],[E|D]) :-
-    internal_lambda_string(E,S),
-    write(S), nl,
-    execute_command(['print'], D, D).
-execute_command(['halt'],_,_) :- halt.
 
 main_loop(OD) :-
     read_s(S),
@@ -451,6 +445,7 @@ main :- main_loop([]), halt.
 
 <<lambda.pl>>=
 <<Initial Lambda Calculus Definitions>>
+<<Additional Lambda Calculus Definitions>>
 
 <<Beta Reduction>>
 

@@ -13,7 +13,7 @@ $(info tests is $(tests))
 $(info runtests is $(runtests))
 $(info runfiletests is $(runfiletests))
 
-go: $(files) $(runtests)
+go: $(files) $(runtests) $(runfiletests)
 
 $(files): % : book.nw
 	notangle -R$* $^ | cpif $@
