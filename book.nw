@@ -406,10 +406,8 @@ compute(L, D, R) :-
     resugar_all(S, D, R).
 execute_command(['define', N, L], D, [[N,R]|D]) :- compute(L, D, R).
 execute_command(['execute', L], D,D) :-
-    desugar_all(L, D, DL),
-    evaluate(DL, R),
-    resugar_all(R, D, SR),
-    lambda_to_atom(SR,O),
+    compute(L, D, R),
+    lambda_to_atom(R,O),
     write(O), nl.
 execute_command(['trace' | T],D,D) :- trace, execute_command(T, D, D).
 execute_command(['halt'],_,_) :- halt.
