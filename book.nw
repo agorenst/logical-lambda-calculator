@@ -292,15 +292,13 @@ Now let's show that ``not nand'' is equal to ''and''.
 (define zero (lambda s s))
 (define succ (lambda n (lambda s ((s false) n))))
 (define one (succ zero))
-(define two (succ one))
-(define three (succ two))
 (define pred1 (lambda n (n false)))
-(define pred (lambda n ((((cond zero) (pred1 n))) (iszero n))))
 @
 
 <<Arithmetic.filetest>>=
 <<Arithmetic>>
-(execute one)
+(execute (succ zero))
+(execute (pred1 one))
 (halt)
 @
 
@@ -402,14 +400,18 @@ Finally, we want to present a simple user-interactive loop.
 Don't call it a repl.
 We have a few different commands we can unify against:
 <<Repl Commands>>=
-execute_command(['define', N, L], D, [[N,L]|D]).
-    %desugar_all(L, D, R).
+compute(L, D, R) :-
+    desugar_all(L, D, DL),
+    evaluate(DL, S),
+    resugar_all(S, D, R).
+execute_command(['define', N, L], D, [[N,R]|D]) :- compute(L, D, R).
 execute_command(['execute', L], D,D) :-
     desugar_all(L, D, DL),
     evaluate(DL, R),
     resugar_all(R, D, SR),
     lambda_to_atom(SR,O),
     write(O), nl.
+execute_command(['trace' | T],D,D) :- trace, execute_command(T, D, D).
 execute_command(['halt'],_,_) :- halt.
 @
 
@@ -417,9 +419,7 @@ execute_command(['halt'],_,_) :- halt.
 main_loop(OD) :-
     read_s(S),
     parse(S,L),
-    write(L), nl,
     execute_command(L,OD,ND),
-    write('DONE EXECUTING'), nl,
     main_loop(ND).
 main_loop(OD) :- write('Parse error'), nl, main_loop(OD).
 main :- main_loop([]), halt.
