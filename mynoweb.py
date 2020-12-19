@@ -91,6 +91,12 @@ def MakeLanguageMap(chunks):
                 if len(d) == 1 and d[0].endswith(".pl"):
                     languageMap[n] = 'prolog'
                     needWork = True
+                if len(d) == 1 and d[0].endswith(".tests"):
+                    languageMap[n] = 'raw'
+                    needWork = True
+                if len(d) == 1 and d[0].endswith(".filetest"):
+                    languageMap[n] = 'raw'
+                    needWork = True
             else:
                 for u in ChunkUses(chunks[n]):
                     for uid in FindChunksByNameList(u, chunks):

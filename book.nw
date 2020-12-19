@@ -4,8 +4,9 @@
 \usepackage{syntax}
 \usepackage{hyperref}
 \usepackage{cleveref}
+% \usepackage{fullpage}
 
-\title{Logical Lambda Calculator \\ \large Part 1}
+\title{Logical Lambda Calculator}
 \author{Aaron Gorenstein}
 \date{January 1, 2021}
 
@@ -59,112 +60,106 @@ function([lambda, V, B]) :- name(V), expression(B).
 application([E1, E2]) :- expression(E1), expression(E2).
 name(X) :- not(is_list(X)), ground(X), X \= lambda.
 @
-Observe that we also obligate ourselves to define [[name(X)]], not present in the grammar.
+What is striking--and this is a tool distinct in Prolog--is how the structure of, e.g.,  a function is on the left-hand side of the predicate.
+We describe the structure we expect, and then add further requirements on the right-hand side.
 
-We can demonstrate how these clauses work.
-Prolog can help verify that the following sentences are true:
-<<Initial1.tests>>=
+Perhaps an analogy is in functional-language-esque pattern-matching, but by the ``bidirectionality'' available in prolog it can be used to both break apart expressions, and build new ones.
+
+\subsection{Demonstrations}
+The following sentences should be true:
+<<Structure.tests>>=
 name(x).
+name(y).
 function([lambda, a, a]).
 application([a, b]).
+function([lambda, a, [a, b]]).
 application([[lambda, a, a], b]).
 application([[lambda, a, a], [lambda, c, [lambda, c, c]]]).
+not(function([a, b])).
+not(function([lambda, a, b, c])).
+not(application([lambda, a, b])).
+not(name([a])).
 @
 
-
-\subsection{Implementing $\beta$-Reduction}
+\section{Implementing $\beta$-Reduction}
 The fundamental action of $\lambda$-calculus is surely the $\beta$-reduction, whereby all instances of the bound variable is replaced by the applicant of the function.
 We define this as:
 <<Beta Reduction>>=
 beta_reduction([lambda, V, B], A, R) :- replace(V, B, A, R).
 @
-Read as English, we would say: ``the $\beta$ reduction of [[F]], when applied to [[A]], results in [[R]].
-This is true when [[F]] is some function with bound variable [[V]] and a body [[B]], and [[R]] is the result of replacing all instances of [[V]] in [[B]] with [[A]].''
-By coarse analogy to imperative languages: the first term of the sentence is both type-checking [[F]] that it is a function, as well as accessing its fields [[V]] and [[B]].
-The second term essentially has the out-parameter [[R]], the result of replacing [[V]] in [[B]] with [[A]].\footnote{Note
-I may be shaky on the vocabulary here, ``bound'' variable and ``term'' and so on.}
+In English: The $\beta$-reduction of a $\lambda v.b$ applied to $A$ is $R$, where $R$ is $B$, but with all instances of $V$ replaced by $A$.
+More immediately: we go through the body $B$ and do the text-substitution.
 
 Let us see how [[replace]] is realized in prolog:
 <<Replace Predicate>>=
 replace(V,V,A,A) :- name(V).
 replace(V,W,_,W) :- name(W), V \= W.
 replace(V,[lambda, V, B],_,[lambda, V, B]).
-replace(V,[lambda, W, B],A,[lambda, W, S]) :- W \= V,
+replace(V,[lambda, W, B],A,[lambda, W, S]) :-
+    W \= V,
     replace(V,B,A,S).
 replace(V, [E1, E2], A, [R1, R2]) :-
     replace(V,E1,A,R1),
     replace(V,E2,A,R2).
 @
-We shall consider each sentence in turn.
+We shall consider each rule in turn.
+\begin{enumerate}
+\item This is a nice demonstration of ``the magic of prolog''. Here the first parameter is [[V]], \emph{and} the expression we want to replace is [[V]].
+In other words, we've found the name we want to replace with [[A]].
+Consequently, the fourth parameter is the same as [[A]], i.e., we ``do'' the substitution.
+Truth be told, we don't need the requirement ``name'', but it's probably a good idea.
+\item This is a similar situation, but the body [[W]] is \emph{not} the same as the variable we're substituting. In that case, there's nothing to rename, so the out-parameter is set to [[W]] as well.
+\item The body [[B]] is some function that \emph{puns} (shadows?) the bound variable.
+In this case we shouldn't do any replacement, so we completely ignore the third parameter, and the fourth is our body unchanged.
+\item The body [[B]] is some function that \emph{doesn't} shadow the bound varaible. Our output is the same function, but with the interior body [[B]] changed to [[S]], which is the recursive call.
+\item Lastly, this is when we have an appliction: \emph{this} case doesn't change which variables are or aren't bound, so it's a ``straightforward'' recursive definition.
+Note in particular how the output parameter ``already uses'' [[R1]] and [[R2]], which feels unintuitive for those accustomed to imperative or functional languages.
+\end{enumerate}
 
-The first definition is the core replacement: our body [[B]] \emph{is} the bound variable [[B]], and so we should set our out-parameter [[R]] to be exactly [[A]].
-This ``setting'' is of course not what happens in prolog.
-Rather it should be understood as saying that, when [[V]] is a name, a valid replacement is when [[V]] and [[B]] are the same, and [[A]] and [[R]] are the same.
-The second definition captures the case when the body of the function is a variable [[W]], but one that is \emph{not} the same as our bound variable [[V]].
-In that case, the result is that no replacement should take place: we unify the result with the (unchanged) body [[W]].
-
-These two definitions play a role in the following examples of $\beta$-reduction:
+Hopefully this is understood as a fairly concise and immediate definition of how replacements of $\beta$-reductions are realized in $\lambda$-calculus.
+To further elucidate, here are some $\beta$-reductions demonstration some of the naming behavior.
+Observe that we \emph{must} have a function as the first parameter.
+\subsection{Demonstrations}
 <<BetaReductions.tests>>=
 beta_reduction([lambda, x, x], a, a).
 beta_reduction([lambda, x, y], a, y).
-@
-Observe how the first case, when we ``get to'' the replacement clause, [[V=x]] and [[B=x]]. Consequently, we set [[R]] to be the applicant [[a]].
-In the second case, there is no such matching ([[V \= W]]), and so [[R]] is set to the unchanged body [[y]].
-These two lines are literally explicit queries one can ask prolog--the expectation is that prolog should report ``yes'' for both as we have implemented everything correctly.
-
-So we have tested all possible cases when the body of our function is simply a name, and we can turn to other cases.
-We can see that there are two cases when we the body of function is itself a nested function.
-The first is when our nested function \emph{itself} defines the symbol [[V]].
-That is, we have a $\lambda$ term like: $\lambda x.\lambda.x(x y)$.
-We have the expectation that something like, say, $\lambda x.\lambda x (x y) a b \to (b y)$, rather than $(a y)$.
-This is ``shadowing'', and it is realized in this third definition by simply\ldots not replacing anything.
-
-We can realize this in tests like so:
-<<BetaReductions.tests>>=
 beta_reduction([lambda, x, [lambda, x, [x, y]]], a, [lambda, x, [x, y]]).
-@
-
-The second definition for when our second parameter is a function is interesting.
-We recursively replace all instances inside the \emph{body} of [[F]], [[B]], and this yields us a new expression [[S]].
-We use this result [[S]] to compose the body of the resulting, upper-level function.
-
-<<BetaReductions.tests>>=
 beta_reduction([lambda, x, [lambda, y, [x, y]]], a, [lambda, y, [a, y]]).
+beta_reduction([lambda, x, x], [lambda, x, [x, x]], [lambda, x, [x, x]]).
 @
 
-Lastly, applications, lacking any immediate name context, are easy.
-
-We can make sure these work in higher-level contexts:
-<<BetaReductions.tests>>=
-beta_reduction([lambda, x, x], [lambda, y, y], R), R == [lambda, y, y].
-beta_reduction([lambda, x, [x, z]], [lambda, y, y], R), R == [[lambda, y, y], z].
-@
-
-\subsection{Evaluation}
-The $\beta$-reduction is the fundamental action through which we define what it is to \emph{evaluate} a $\lambda$-expression.
-Let us do that now:
+\section{Evaluation}
+The complete computation for $\lambda$-calculus requires \emph{evaluation}.
+Where $\beta$-reductions are only defined for functions, evaluation will take any $\lambda$-expression and give the result.
+There is applicative order and normal order--we shall do normal.
 <<Evaluate>>=
-evaluate(L, L) :- name(L).
-evaluate(L, L) :- function(L).
+evaluate([E1, E2], R) :-
+    evaluate(E1, R1), E1 \= R1,
+    evaluate([R1, E2], R).
 evaluate([E1, E2], R) :-
     beta_reduction(E1, E2, R1),
     evaluate(R1, R).
-evaluate([E1, E2], R) :-
-    evaluate(E1, R1),
-    evaluate([R1, E2], R).
+evaluate(L, L).
 @
-Similar to before, we consider each possible ``type'' of $\lambda$-expression.
-The evaluation of a name, or a function, leaves those types unchanged.
-It is only when we encounter an \emph{application} is the result of evaluation not (necessarily) equal to the input.
-When the applicator (the left-hand-side of the application pair, i.e., [[E1]]) is a name, there is nothing for us to do.
-If the applicator is a function--hooray, this is the entry point into the $\beta$-reduction and we continue.
-If the applicator itself is an application pair (something like $((a b) c)$, we first need to evaluate the pair $(a b)$ to yield [[R1]], and then recurse with that updated applicator.
+For conciseness the implementation of this procedure uses recursion, and exploits that prolog will always search for the \emph{first} solution.
+\begin{enumerate}
+\item The first rule shows that when considering an application, we should first evaluate its left-hand side (in case if the left-hand side is \emph{also} an application).
+\item The second rule will eagerly try to do a beta-reduction (which will fail is [[E1]] is not a function) and recurse on the result.
+\item The third succinctly capture that, if we are no longer able to evolve the $\lambda$-expression, we're done.
+\end{enumerate}
+This definition of evaluation opens the door to multiple answers, essentially each one doing ``less and less'' computation.
+We order of rules in the procedure means that the first answer always has the maximal amount of computation.
+See chapter 7 of \cite{artofprolog}.
 
-Observe the tail-recursive definitions of [[evaluate]] for the [[function(E1)]] and [[application(E1)]] cases.
-
-Observe also that we are doing \emph{normal-order} evaluation, instead of \emph{applicative-order} evaluation.
-This can be demonstrated with the following claim:
-<<EvaluationTests.tests>>=
+\subsection{Demonstrations}
+<<Evaluation.tests>>=
+evaluate(a, a).
+evaluate([lambda, a, a], [lambda, a, a]).
+evaluate([[lambda, a, a], b], b).
+<<Normal Order Tests>>
+@
+We can confirm we have normal-order evaluation:
+<<Normal Order Tests>>=
 evaluate([ [lambda, x, [lambda, y, [y, x]]], [[lambda, a, [a, a]], b] ] , [lambda, y, [y, [[lambda, a, [a, a]], b]]]).
 @
 Observe how we don't evaluate the self-apply function.
@@ -181,19 +176,28 @@ but this will contain a few more interesting applications of prolog to illuminat
 \section{Introducing an Environment}
 The simplest environment would be to ``save'' an atom, such as [[identity]], and associate it with a value, such as [[[lambda, x, x]]].
 In cases where we see the (unbound) atom [[identity]], we would replace it with the value.
-As this does not truly add any computational power, this sort of machinery is conventionally called ``sugaring'' (and its removal, ``desugaring'').
+As this does not truly add any computational power, this sort of machinery is conventionally called ``sugaring'' (and its removal, which I'll call ``desugaring'').
 
+Classic definitions for, e.g., logical values include:
+<<Logic Definitions>>=
+(define true (lambda x (lambda y x)))
+(define false (lambda x (lambda y y)))
+(define and (lambda x (lambda y ((x y) false))))
+(define not (lambda x ((x false) true)))
+@
+A fuller exploration of these can be found in \cite{lambdacalc}.
+
+Assuming we have those names mapping, we would like to replace those names with their associated expressions before evaluation.
+Of course, $\lambda$-calculus machinery is excellent at replacing names with other values:
 <<Desugaring>>=
 desugar([N,E], L, R) :- beta_reduction([lambda, N, L], E, R).
 desugar_all(L, D, R) :- foldl(desugar, D, L, R).
 @
-
-TODO: include a demonstration that this doesn't quite do what we want--we will need to ``resugar'' our result.
-
-TODO: demonstrate we need $\alpha$-conversion, too.
-
-We want to map the resugaring, bottom-up, over the tree.
-We are simply reversing beta reduction:
+So given a sugar-using $\lambda$ expression, we can now succinctly take out the sugar, opening the door for further evaluation.
+However, the \emph{result} of that computation would be unsugared.
+So an expression like [[((and false) true)]], which we would hope give us [[false]], would in fact give us [[lambda, x, [lambda, y, y]]].
+We would like resugar those results.
+In spirit, this is ``merely'' doing beta-reduction in reverse:
 <<Resugaring>>=
 resugar([N, E], L, N) :- isomorphic(L, E).
 resugar(M, [lambda, V, B], [lambda, V, SB]) :- resugar(M, B, SB).
@@ -201,35 +205,57 @@ resugar(M, [E1, E2], [R1, R2]) :-
     resugar(M, E1, R1),
     resugar(M, E2, R2).
 resugar(_, L, L).
-
 resugar_all(L, D, R) :- foldl(resugar, D, L, S), S \= L, resugar_all(S, D, R).
 resugar_all(L, _, L).
 @
+Consider each rule:
+\begin{enumerate}
+\item The first rule is the main machinery: if the $\lambda$-expression [[L]] is isomorphic to the expression [[E]] that is sugared as name [[N]], we should output [[N]].
+\item Rules 2 and 3 are the recursive exploration of the $\lambda$-expression.
+\item[4.] Rule 4 ensures that we always succeed at resugaring, even if we fail to do any actual substitution.
+\item[5.] We will maximally apply resugaring, and then if there was any change try again.
+\item[6.] Again we ensure that we'll always succeed at resugaring even if no changes were detected.
+\end{enumerate}
+Maybe there is a more prolog-y way of doing this?
 
+\section{The $\alpha$-Reduction}
+Of course if we have a macro for [[lambda, y, y]], we would want to it to ``match'' against even if [[L]] is [[lambda, x, x]].
+That is why we have the (cryptic) clause [[isomorphic]] as part of the resugaring procedure.
+This is an excellent reason to introduce $\alpha$-reduction:
 <<Alpha Reduction>>=
 alpha_reduction(L, L) :- name(L).
 alpha_reduction([E1, E2], [R1, R2]) :-
     alpha_reduction(E1, R1),
     alpha_reduction(E2, R2).
-alpha_reduction(L, [lambda, X, ABB]) :- function(L),
+alpha_reduction([lambda, V, B], [lambda, X, ABB]) :-
     gensym(alpha_,X),
-    beta_reduction(L, X, BB),
+    replace(V, B, X, BB),
     alpha_reduction(BB, ABB).
+@
+Observe that the only work is done in the last rule.
+The runtime-provided [[gensym]] is used to create the next unique atom beginning with the prefix [[alpha_]].
+We then replace the \emph{variable} [[V]] with [[X]], and reconstitute our function.
+There is no reason why we can't use [[beta_reduction]] on the input function, except that it is unneeded.
 
+We can now define when two $\lambda$-expressions are isomorphic:
+<<Isomorphic>>=
 canon(L, R) :- reset_gensym(alpha_), alpha_reduction(L, R).
-
 isomorphic(A, B) :- canon(A, C), canon(B, C).
 @
 
+\subsection{Demonstrations}
 <<AlphaReduction.tests>>=
+isomorphic(x, x).
 isomorphic([lambda, x, x], [lambda, y, y]).
+not(isomorphic([lambda, x, x], [lambda, y, [y, y]])).
+not(isomorphic(x, y)).
 @
+We now have a framework to start building up more familiar math systems!
 
+\section{Implementing Boolean Algebra}
+Recall the logic definitions from earlier, in \cref{Logic Definitions}.
 <<FirstLoop.filetest>>=
-(define true (lambda x (lambda y x)))
-(define false (lambda x (lambda y y)))
-(define and (lambda x (lambda y ((x y) false))))
-(define not (lambda x ((x false) true)))
+<<Logic Definitions>>
 (define nand (lambda x (lambda y (not ((and x) y)))))
 (execute ((nand true) true))
 (execute ((nand true) false))
@@ -239,10 +265,7 @@ isomorphic([lambda, x, x], [lambda, y, y]).
 @
 
 <<SecondLoop.filetest>>=
-(define true (lambda x (lambda y x)))
-(define false (lambda x (lambda y y)))
-(define and (lambda x (lambda y ((x y) false))))
-(define not (lambda x ((x false) true)))
+<<Logic Definitions>>
 (define nand (lambda x (lambda y (not ((and x) y)))))
 (execute nand)
 (execute (nand true))
@@ -256,9 +279,33 @@ isomorphic([lambda, x, x], [lambda, y, y]).
 (halt)
 @
 
+
 NOTE: Putting ``not'' in front of ``nand'' evaluates things in the wrong order, things aren't commutative like I'd like.
 
 Now let's show that ``not nand'' is equal to ''and''.
+
+\section{Implementing Arithmetic}
+<<Arithmetic>>=
+<<Logic Definitions>>
+(define cond (lambda e1 (lambda e2 (lambda c ((c e1) e2)))))
+(define iszero (lambda n (n true)))
+(define zero (lambda s s))
+(define succ (lambda n (lambda s ((s false) n))))
+(define one (succ zero))
+(define two (succ one))
+(define three (succ two))
+(define pred1 (lambda n (n false)))
+(define pred (lambda n ((((cond zero) (pred1 n))) (iszero n))))
+@
+
+<<Arithmetic.filetest>>=
+<<Arithmetic>>
+(execute one)
+(halt)
+@
+
+<<Addition Demonstration>>=
+(define add2 (lambda f (lambda x (lambda y))))
 
 \section{Parsing}
 We have been looking at $\lambda$s in an annoying way, as [[[lambda, N, B]]].
@@ -275,7 +322,7 @@ Handling input streams is tricky and annoying.
 If memory serves (this is me writing in 2020 trying to remember what I did in 2016) I am greatly indebted to Sterling and Shapiro\cite{artofprolog} in designing a prolog-implemented parser.
 
 <<Tokenizer>>=
-read_s(S) :-           get_char(C),                    read_s(C, S).
+read_s(S)           :- get_char(C),                    read_s(C, S).
 read_s(' ',S)       :- get_char(D),                    read_s(D, S).
 read_s('(',['('|S]) :- get_char(D),                    read_s(D, S).
 read_s(')',[')'|S]) :- get_char(D),                    read_s(D, S).
@@ -310,7 +357,7 @@ name_char(C) :- char_code(C,N), N >= 97, N =< 122. % lower case.
 name_char(C) :- char_code(C,N), N == 95. % underscore
 name_char(C) :- char_code(C,N), N >= 48, N =< 57. % decimals
 @
-The output parameter, such that it is, is [[N]] in the first clause.
+The output parameter, such that it is, is [[N]] in the first rule.
 That is an atom, resulted by the character [[C]] \emph{prepended} on to the string [[S]] built up by [[read_name_chars]].
 The character [[E]] is the evidence that we've stopped reading valid-name-characters (see the last clause of [[read_name_chars]]).
 
@@ -322,77 +369,59 @@ This concludes the tokenizer.
 Now given a sequence of tokens, we can distill them into the nested lists we want for our internal representation.
 The tricky thing is matching parentheses.
 <<Parser>>=
-parse2(['(', lambda, X | T], [lambda, X, B]) :-
-    name(X),
-    append(S, [')'], T),
-    parse2(T, B).
-parse([')'|T], [], [')'|T]).
-parse(['('|T], [M|L], R) :- parse(T,M,[')'|S]), parse(S,L,R).
-parse([N|T], [N|L], R) :- N \= ')', N \= '(', parse(T,L,R).
+parse(S,L) :- parse(S, [], [L]).
+parse(['('|T], R, [M|L]) :- parse(T, [')'|S], M), parse(S, R, L).
+parse([')'|T], [')'|T], []).
+parse([N|T], R, [N|L]) :- N \= ')', N \= '(', parse(T, R, L).
 parse([],[],[]).
-parse(S,L) :- parse(S,L,[]).
 @
 How does this work? That's an excellent question.
-The entry point is obviously the last line.
-The last case, [[parse/2]], is our entry point: it parses the string [[S]] into the $\lambda$-expression [[L]].
-Observe that it requires we go through all of [[parse/3]] and end with the 3rd parameter as an empty list.
-Let's explore the semantics of [[parse/3]].
-
-The first parameter is some prefix of the original (tokenized) input, the middle parameter is the $\lambda$-expression representing that prefix, and the third parameter is the unparsed suffix of the input.
-This explains the final sentence as well as the [[parse/3]] base case: we are done when there is no unparsed suffix left.
-
-For the middle definition, [[parse([N|T], [N|L], R)]], this is a ``simple case''.
-If the token [[N]] is not a parenthesis, then it's simply some name in the $\lambda$-expression, and we append it on as appropriate.
-
-For the second definition, [[parse(['('|T], [M|L], R)]], we have a tricky interaction.
-We have some internal term [[T]] presumably ``inside'' the parens we're starting.
-The parse of that [[T]] is [[M]], characterized by when we find a suffix [[S]] that begins with [[')']].
-This [[M]] is simply appended on to the larger expression [[L]], which is the tail-call of parsing that suffix.
-(Note the similarity of that tail-call machinery to the ``name'' case below.)
-
-Finally, the first sentence is another base case: when we've reached the [['C']], we should ``end'' that $\lambda$ expression with an empty list (upon which, ultimately, all the actual terms will be appended).
+We shall go line-by-line:
+\begin{enumerate}
+\item This is the entry point: A parse is valid when the sequence-of-tokens [[S]] is the same as the $\lambda$-expression [[L]].
+This is implemented by deferring to [[parse/3]], where the first parameter is some prefix of tokens, the second is the unmatched suffix of tokens, and the third parameter is the $\lambda$-expression of the prefix.
+So the entry-point parse is valid when there is no unparsed suffix.
+\item This first rule for [[parse/3]] handles when the next token it sees is open-parens.
+This is where much of the trickiness happens.
+We essentially defer to a sub-parse of the tail [[T]] of that prefix, ending with the matching parens [[')']].
+The result of that sub-parse is [[M]], which we wrap in a list (because it was in parens).
+The remaining suffix of that sub-parse, [[S]], is itself parsed to give us the \emph{tail} following that [[M]].
+\item When we reach the end of a parens, that is the start of some intermediate list we build up, so the result of that parse is [].
+\item The base case.
+\end{enumerate}
 
 We also want to print out our internal lambda representation the same way.
 Note that [[atomic_list_concat]] is provided by our environment, and does what you think.
 <<Lambda Printer>>=
-lambda_to_atom(L, L) :- name(L).
-lambda_to_atom([lambda, V, B], R) :-
-    lambda_to_atom(B, BS),
-    atomic_list_concat(['(lambda ', V, ' ', BS, ')'], '', R).
-lambda_to_atom([E1, E2], R) :-
-    lambda_to_atom(E1, R1),
-    lambda_to_atom(E2, R2),
-    atomic_list_concat(['(', R1, ' ', R2, ')'], '', R).
+lambda_to_atom(L, R) :- parse(S, L), atomic_list_concat(S, ' ', R).
 @
+Isn't that neat, we use the parser to ``unparse'' the $\lambda$-expression?
+We'd like to be able to do that with sugaring/desugaring/$\beta$-reductions, but I've not figured it out yet.
 
 Finally, we want to present a simple user-interactive loop.
 Don't call it a repl.
 We have a few different commands we can unify against:
 <<Repl Commands>>=
 execute_command(['define', N, L], D, [[N,L]|D]).
+    %desugar_all(L, D, R).
 execute_command(['execute', L], D,D) :-
     desugar_all(L, D, DL),
     evaluate(DL, R),
-    resugar_all(R,D,SR),
+    resugar_all(R, D, SR),
     lambda_to_atom(SR,O),
     write(O), nl.
 execute_command(['halt'],_,_) :- halt.
 @
 
-TODO: Parsing lambda strings back and forth -- couldn't that be a single 3-parameter clause?
-Similar with sugaring/desugaring. The whole point of prolog is the magic fact that there's no time.
-
-
 <<Main Loop>>=
-
 main_loop(OD) :-
     read_s(S),
-    parse(S,[L]), % I strip out the other list immediately. Why not.
+    parse(S,L),
+    write(L), nl,
     execute_command(L,OD,ND),
+    write('DONE EXECUTING'), nl,
     main_loop(ND).
 main_loop(OD) :- write('Parse error'), nl, main_loop(OD).
-
-% :- initialization main.
 main :- main_loop([]), halt.
 @
 
@@ -404,6 +433,7 @@ main :- main_loop([]), halt.
 <<Replace Predicate>>
 <<Evaluate>>
 <<Alpha Reduction>>
+<<Isomorphic>>
 <<Desugaring>>
 <<Resugaring>>
 <<Tokenizer>>
@@ -414,24 +444,24 @@ main :- main_loop([]), halt.
 <<Main Loop>>
 @
 
-<<Evaluate.tests>>=
-evaluate([[lambda, x, x], [lambda, x, x]], R), R == [lambda, x, x].
-evaluate([[lambda, x, [x, x]], [lambda, x, x]], R), R == [lambda, x, x].
-@
-
 \section{Extentions}
-Resugaring should be able to be expressed as beta-reduction, but backwards. This may require canonicalization to be done in beta reductions.
+Resugaring should be able to be expressed as beta-reduction, but backwards.
+This may require canonicalization to be done in beta reductions.
+
+Implementing arithmetic and other demonstrations.
 
 Observe that we very often traverse the $\lambda$-expression tree (the repeated pattern of the name being the base case, and the function/applications being recursively mapped).
 Perhaps this suggests a second-order predicate that maps, or folds, or both, over the expression.
 Maybe this is too close to $\lambda$-calculus and would get us full circle; I don't know.
 
-I wonder if the parser can be improved or reduced in lines-of-code.
+I wonder if the parser can be improved or reduced in lines-of-code, though I gave it a shot and it's hard to match parens.
+I think the original code may have been tracing through a parser provided in \cite{artofprolog}.
 
 \appendix
-\section{Complete Code Listings}
-\subsection{lambda.pl}
+\newpage
+\section{Complete Code Listing}
 \inputminted[linenos=true]{prolog}{lambda.pl}
+\newpage
 
 \bibliography{library}
 \bibliographystyle{alpha}

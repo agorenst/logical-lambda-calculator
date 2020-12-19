@@ -8,11 +8,6 @@ runtests = $(addsuffix .run, $(tests))
 filetests = $(filter %.filetest, $(files))
 runfiletests = $(addsuffix .filerun, $(filetests))
 
-$(info files is $(files))
-$(info tests is $(tests))
-$(info runtests is $(runtests))
-$(info runfiletests is $(runfiletests))
-
 go: $(files) $(runtests) $(runfiletests)
 
 $(files): % : book.nw
@@ -31,7 +26,7 @@ book: book.pdf
 	cp book.pdf /mnt/c/Users/agore/Desktop/prolog_scheme.pdf
 
 
-book.pdf: book.tex
+book.pdf: book.tex mynoweb.py
 	latexmk -shell-escape -pdf book.tex
 
 clean:
