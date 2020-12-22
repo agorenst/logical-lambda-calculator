@@ -92,10 +92,10 @@ def MakeLanguageMap(chunks):
                     languageMap[n] = 'prolog'
                     needWork = True
                 if len(d) == 1 and d[0].endswith(".tests"):
-                    languageMap[n] = 'raw'
+                    languageMap[n] = 'text'
                     needWork = True
                 if len(d) == 1 and d[0].endswith(".filetest"):
-                    languageMap[n] = 'raw'
+                    languageMap[n] = 'text'
                     needWork = True
             else:
                 for u in ChunkUses(chunks[n]):
@@ -132,21 +132,52 @@ for n in chunks.keys():
 # now we ENTIRELY REMOVE the @code marker, and change it to text.
 
 
+def HandleLanguageHeader(language, line, newChunk):
+    language = line.split()[1]
+    newChunk.append('@nl\n')
+
+    start_listing = '@text \\begin{listing}[H]\n@nl\n@text '
+
+    if language == 'text':
+        start_minted = '\\begin{minted}[fontsize=\\footnotesize,frame=lines,breaklines,escapeinside=@@]{'
+    else:
+        start_minted = '\\begin{minted}[fontsize=\\footnotesize,frame=lines,mathescape]{'
+
+    language = line.split()[1]
+    assert(language)
+    end_string = language+'}\n@nl\n'
+
+    newChunk.append(start_listing + start_minted + end_string)
+    return language
+
+
+def HandleLanguageEnd(language, chunkName, line, newChunk):
+    newChunk.append('@text \end{minted}\n@nl\n')
+    newChunk.append(
+        '@text \caption{'+chunkName.replace('_', '\\_')+'}\n@nl\n')
+    #newChunk.append('@text \label{'+chunkName.replace(' ', ':')+'}\n@nl\n')
+    newChunk.append('@text \label{'+chunkName+'}\n@nl\n')
+    newChunk.append('@text \end{listing}\n@nl\n')
+    line = line.replace('code', 'docs')
+    return line
+
+
+def HandleLanguageUse(language, useName, newChunk):
+    if language == 'text':
+        newChunk.append(
+            '@text @ <<insert $\cref{'+useName+'}$ (' + useName + ')>> @\n')
+    else:
+        newChunk.append(
+            '@text % insert $\cref{'+useName+'}$ (' + useName + ')\n')
+
+
 def CodeChunkToFigChunk(chunk):
     newChunk = []
     chunkName = ""
+    language = ""
     for line in chunk:
         if line.split()[:1] == ['@language']:
-            newChunk.append('@nl\n')
-            start_listing = '@text \\begin{listing}[H]\n@nl\n@text '
-            start_minted = '\\begin{minted}[fontsize=\\footnotesize,frame=lines,mathescape]{'
-
-            language = line.split()[1]
-            assert(language)
-            end_string = language+'}\n@nl\n'
-            #end_string = 'c}\n@nl\n'
-
-            newChunk.append(start_listing + start_minted + end_string)
+            language = HandleLanguageHeader(language, line, newChunk)
             continue
         if line.split()[:1] == ['@defn']:
             #newChunk.append('@text // '+line)
@@ -154,26 +185,13 @@ def CodeChunkToFigChunk(chunk):
             continue
         if line.split()[:1] == ['@use']:
             useName = ' '.join(line.split()[1:]).rstrip()
-
-            # newChunk.append(
-            # '@text // insert $\cref{'+useName+'}$ (' + useName + ')\n')
-
-            newChunk.append(
-                '@text % insert $\cref{'+useName+'}$ (' + useName + ')\n')
-
-            #newChunk.append('@text // Code from \cref{'+useName+'} (' + useName + ')\n')
+            HandleLanguageUse(language, useName, newChunk)
             continue
         # transform from code to docs. Easy peasy.
         if line.split()[:2] == ['@begin', 'code']:
             line = line.replace('code', 'docs')
         if line.split()[:2] == ['@end', 'code']:
-            newChunk.append('@text \end{minted}\n@nl\n')
-            newChunk.append(
-                '@text \caption{'+chunkName.replace('_', '\\_')+'}\n@nl\n')
-            #newChunk.append('@text \label{'+chunkName.replace(' ', ':')+'}\n@nl\n')
-            newChunk.append('@text \label{'+chunkName+'}\n@nl\n')
-            newChunk.append('@text \end{listing}\n@nl\n')
-            line = line.replace('code', 'docs')
+            line = HandleLanguageEnd(language, chunkName, line, newChunk)
         newChunk.append(line)
     return newChunk
 

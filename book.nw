@@ -4,11 +4,11 @@
 \usepackage{syntax}
 \usepackage{hyperref}
 \usepackage{cleveref}
-% \usepackage{fullpage}
 
 \title{Logical Lambda Calculator}
 \author{Aaron Gorenstein}
-\date{January 1, 2021}
+\date{\today}
+
 
 \begin{document}
 
@@ -22,7 +22,10 @@ What value this study provides is largely credited to those books; what errors f
 
 The original purpose of this document was to try to create a really definitive exploration.
 In concession to real-world constraints, I reduced the scope to more like personal notes--the exposition is not as exhaustive as I would have liked.
+Perhaps this can be used as an entertaining lecture in some programming language course.
 \end{abstract}
+
+\tableofcontents
 
 \section{Introduction}
 \paragraph{Broad Thoughts}
@@ -57,10 +60,10 @@ expression(L) :- name(L).
 expression(L) :- function(L).
 expression(L) :- application(L).
 function([lambda, V, B]) :- name(V), expression(B).
-application([E1, E2]) :- expression(E1), expression(E2).
-name(X) :- not(is_list(X)), ground(X), X \= lambda.
+application([E1, E2])    :- expression(E1), expression(E2).
+name(X)       :- not(is_list(X)), ground(X), X \= lambda.
 @
-What is striking--and this is a tool distinct in Prolog--is how the structure of, e.g.,  a function is on the left-hand side of the predicate.
+What is striking--and this is a tool distinct in Prolog--is how the structure of, e.g.,  a function is on the left-hand side of the rule.
 We describe the structure we expect, and then add further requirements on the right-hand side.
 
 Perhaps an analogy is in functional-language-esque pattern-matching, but by the ``bidirectionality'' available in prolog it can be used to both break apart expressions, and build new ones.
@@ -104,11 +107,13 @@ replace(V, [E1, E2], A, [R1, R2]) :-
 @
 We shall consider each rule in turn.
 \begin{enumerate}
-\item This is a nice demonstration of ``the magic of prolog''. Here the first parameter is [[V]], \emph{and} the expression we want to replace is [[V]].
+\item This is a nice demonstration of ``the magic of prolog''.
+Here the first parameter is [[V]], \emph{and} the expression we want to replace, the second parameter, is also [[V]].
 In other words, we've found the name we want to replace with [[A]].
 Consequently, the fourth parameter is the same as [[A]], i.e., we ``do'' the substitution.
 Truth be told, we don't need the requirement ``name'', but it's probably a good idea.
-\item This is a similar situation, but the body [[W]] is \emph{not} the same as the variable we're substituting. In that case, there's nothing to rename, so the out-parameter is set to [[W]] as well.
+\item This is a similar situation, but the body [[W]] is \emph{not} the same as the variable we're substituting.
+In that case, there's nothing to rename, so the out-parameter is set to [[W]] as well, i.e., unchanged.
 \item The body [[B]] is some function that \emph{puns} (shadows?) the bound variable.
 In this case we shouldn't do any replacement, so we completely ignore the third parameter, and the fourth is our body unchanged.
 \item The body [[B]] is some function that \emph{doesn't} shadow the bound varaible. Our output is the same function, but with the interior body [[B]] changed to [[S]], which is the recursive call.
@@ -144,28 +149,25 @@ evaluate(L, L).
 For conciseness the implementation of this procedure uses recursion, and exploits that prolog will always search for the \emph{first} solution.
 \begin{enumerate}
 \item The first rule shows that when considering an application, we should first evaluate its left-hand side (in case if the left-hand side is \emph{also} an application).
-\item The second rule will eagerly try to do a beta-reduction (which will fail is [[E1]] is not a function) and recurse on the result.
+\item The second rule will eagerly try to do a $\beta$-reduction (which will fail is [[E1]] is not a function) and recurse on the result.
 \item The third succinctly capture that, if we are no longer able to evolve the $\lambda$-expression, we're done.
 \end{enumerate}
 This definition of evaluation opens the door to multiple answers, essentially each one doing ``less and less'' computation.
 We order of rules in the procedure means that the first answer always has the maximal amount of computation.
-See chapter 7 of \cite{artofprolog}.
+See chapter 7 of \cite{artofprolog} for a discussion of how rule-order shapes the order of solutions found.
 
 \subsection{Demonstrations}
 <<Evaluation.tests>>=
 evaluate(a, a).
 evaluate([lambda, a, a], [lambda, a, a]).
 evaluate([[lambda, a, a], b], b).
-<<Normal Order Tests>>
-@
-We can confirm we have normal-order evaluation:
-<<Normal Order Tests>>=
 evaluate([ [lambda, x, [lambda, y, [y, x]]], [[lambda, a, [a, a]], b] ] , [lambda, y, [y, [[lambda, a, [a, a]], b]]]).
 @
-Observe how we don't evaluate the self-apply function.
+The last line confirms that we have normal-order evaluation; observe how we don't evaluate the self-apply function.
 
 In a sense, we have achieved our goal.
 We have a (rather awkward) way of writing arbitrary lambda expressions and evaluate them.
+Are we done?
 
 By analogy, I would suggest we have something like the ALU in a CPU.
 We can do the fundamental operations we're interested in, but lack memory or any reasonable interface to actually deploy this computation.
@@ -176,7 +178,9 @@ but this will contain a few more interesting applications of prolog to illuminat
 \section{Introducing an Environment}
 The simplest environment would be to ``save'' an atom, such as [[identity]], and associate it with a value, such as [[[lambda, x, x]]].
 In cases where we see the (unbound) atom [[identity]], we would replace it with the value.
-As this does not truly add any computational power, this sort of machinery is conventionally called ``sugaring'' (and its removal, which I'll call ``desugaring'').
+This sort of machinery is conventionally called ``sugaring'' (and its removal, which I'll call ``desugaring'').
+It adds no real additional computational power, just convenience.
+This is a very primitive macro system, in a sense.
 
 Classic definitions for, e.g., logical values include:
 <<Logic Definitions>>=
@@ -185,7 +189,7 @@ Classic definitions for, e.g., logical values include:
 (define and (lambda x (lambda y ((x y) false))))
 (define not (lambda x ((x false) true)))
 @
-A fuller exploration of these can be found in \cite{lambdacalc}.
+A fuller exploration of these, including how these values were determined, can be found in \cite{lambdacalc}.
 
 Assuming we have those names mapping, we would like to replace those names with their associated expressions before evaluation.
 Of course, $\lambda$-calculus machinery is excellent at replacing names with other values:
@@ -193,13 +197,16 @@ Of course, $\lambda$-calculus machinery is excellent at replacing names with oth
 desugar([N,E], L, R) :- beta_reduction([lambda, N, L], E, R).
 desugar_all(L, D, R) :- foldl(desugar, D, L, R).
 @
+For each name, $\lambda$-expression pair $(N, E)$, we essentially compute: $R = ((\lambda N . L) E)$, which means any unbound $N$ in $L$ is replaced by the $\lambda$-expression $E$.
+That's exactly what we want, machinery-wise.
+
 So given a sugar-using $\lambda$ expression, we can now succinctly take out the sugar, opening the door for further evaluation.
 However, the \emph{result} of that computation would be unsugared.
 So an expression like [[((and false) true)]], which we would hope give us [[false]], would in fact give us [[lambda, x, [lambda, y, y]]].
 We would like resugar those results.
 In spirit, this is ``merely'' doing beta-reduction in reverse:
 <<Resugaring>>=
-resugar([N, E], L, N) :- isomorphic(L, E).
+resugar([N, E], L, N) :- isomorphic(E, L).
 resugar(M, [lambda, V, B], [lambda, V, SB]) :- resugar(M, B, SB).
 resugar(M, [E1, E2], [R1, R2]) :-
     resugar(M, E1, R1),
@@ -216,7 +223,33 @@ Consider each rule:
 \item[5.] We will maximally apply resugaring, and then if there was any change try again.
 \item[6.] Again we ensure that we'll always succeed at resugaring even if no changes were detected.
 \end{enumerate}
-Maybe there is a more prolog-y way of doing this?
+An unfortunate detail of this is that this is \emph{quite} inefficient.
+It is likely a prolog expert can take a look at this procedure or [[isomorphic]] (\cref{Isomorphic}) and improve the performance.
+An obvious experiment is to put the [[isomorphic]] rule ``lower down'' the list, but in my limited experiments that merely puts the slowdown elsewhere.
+An alternative is to replace the first rule with [[resugar([N, L], L, N)]].
+This works for our examples, and is much faster, but without [[isomorphic]] we would be confused by otherwise-equivalent $\lambda$-expressions have different variable names.
+
+It is likely, though I have no considered it formally, that this is not a rigorous resugaring method.
+We are in essence trying to tile a tree, (recursively?) and I would bet that's at least NP-hard, if not worse.
+Another formulation may be treating the macros as grammar productions, and finding the best parse of this tree.
+I would describe the above algorithm as a naive greedy approach, but it is enough to get us what we want
+for this demonstration document.
+
+\subsection{Evaluation with Sugar}
+We can combine the desguar, resugar, and evaluation procedures to define:
+<<Compute>>=
+compute(L, D, R) :-
+    desugar_all(L, D, DL),
+    evaluate(DL, S),
+    resugar_all(S, D, R).
+@
+This is the complete computational \emph{and} expressive power of the code in this document.
+There are still limitations--see \cref{sec:extensions}--but an interested (and patient\ldots) reader
+can use this to explore $\lambda$-calculus in prolog with a workable way of referring to the higher-level definitions.
+
+With the viewpoint that the ``sugaring'' is a limited form of a macro-system, we can see clearly
+how macros are distinct from the true $\beta$-reductions. They're literally a separate clause.
+This can help make clear why, even as macros in real languages like scheme, seem so similar to procedures yet still have distinguished functionality.
 
 \section{The $\alpha$-Reduction}
 Of course if we have a macro for [[lambda, y, y]], we would want to it to ``match'' against even if [[L]] is [[lambda, x, x]].
@@ -242,8 +275,13 @@ We can now define when two $\lambda$-expressions are isomorphic:
 canon(L, R) :- reset_gensym(alpha_), alpha_reduction(L, R).
 isomorphic(A, B) :- canon(A, C), canon(B, C).
 @
+We use this as part of our resugaring, but sometimes we can get away without using it.
+Observe that we don't really ``cache'' the results of canonicalizing an expression.
+This is unneeded, but in practice may be useful.
+Echoes of merkle trees.
 
 \subsection{Demonstrations}
+Here are some quick demonstration/tests of what we can consider isomorphic.
 <<AlphaReduction.tests>>=
 isomorphic(x, x).
 isomorphic([lambda, x, x], [lambda, y, y]).
@@ -253,8 +291,13 @@ not(isomorphic(x, y)).
 We now have a framework to start building up more familiar math systems!
 
 \section{Implementing Boolean Algebra}
+Following in the excellent footsteps of \cite{lambdacalc}, we will start with Boolean algebra.
+Note that we are using a more Scheme-like syntax for our parentheses.
+We will in fact implement a parser that can compile this more traditional syntax into our prolog objects, demonstrated in \cref{sec:parsing}.
+
 Recall the logic definitions from earlier, in \cref{Logic Definitions}.
-<<FirstLoop.filetest>>=
+We can use these to implement my favorite logical function, [[nand]]:
+<<Nand.filetest>>=
 <<Logic Definitions>>
 (define nand (lambda x (lambda y (not ((and x) y)))))
 (execute ((nand true) true))
@@ -263,55 +306,53 @@ Recall the logic definitions from earlier, in \cref{Logic Definitions}.
 (execute ((nand false) false))
 (halt)
 @
+This file is a simple test that can fed into our final product at the end of this document, and we can hand-verify that we get the values we want.
 
-<<SecondLoop.filetest>>=
+An interesting complication, from those accustomed to stricter programming environments,
+is that the definition of [[nand]] can be incorrectly defined: [[(((not and) x) y)]]
+<<WrongNand.filetest>>=
 <<Logic Definitions>>
-(define nand (lambda x (lambda y (not ((and x) y)))))
-(execute nand)
-(execute (nand true))
-(execute (lambda x (lambda y (((not nand) x) y))))
-(define nnand (lambda x (lambda y (not ((nand x) y)))))
-(execute (lambda x (lambda y (not ((nand x) y)))))
-(execute ((nnand true) true))
-(execute ((nnand true) false))
-(execute ((nnand false) true))
-(execute ((nnand false) false))
+(define nand (lambda x (lambda y (((not and) x) y))))
+(execute ((nand true) true))
+(execute ((nand true) false))
+(execute ((nand false) true))
+(execute ((nand false) false))
 (halt)
 @
-
-
-NOTE: Putting ``not'' in front of ``nand'' evaluates things in the wrong order, things aren't commutative like I'd like.
-
-Now let's show that ``not nand'' is equal to ''and''.
+This gives us a gibberish result: the four executions yield true-false-true-false, as it happens.
+In some sense it's not surprising---we're applying non-commutative functions in the wrong order---but in another sense it is surprising that anything happens at all!
 
 \section{Implementing Arithmetic}
+As a final demonstration, we can implement some of the basic building blocks of arithmetic.
+Again, as always, the definitions here are all from the excellent reference book.\cite{lambdacalc}
 <<Arithmetic>>=
 <<Logic Definitions>>
 (define cond (lambda e1 (lambda e2 (lambda c ((c e1) e2)))))
 (define iszero (lambda n (n true)))
-(define zero (lambda s s))
+(define zero (lambda a a))
 (define succ (lambda n (lambda s ((s false) n))))
 (define one (succ zero))
 (define pred1 (lambda n (n false)))
 @
-
+We have a sparse demonstration:
 <<Arithmetic.filetest>>=
 <<Arithmetic>>
 (execute (succ zero))
 (execute (pred1 one))
 (halt)
 @
+This allows us to hand-verify that the value after [[zero]] is [[one]], and the value before [[one]] is [[zero]].
+A great insight.
 
-<<Addition Demonstration>>=
-(define add2 (lambda f (lambda x (lambda y))))
+Arithmetic motivates enabling the creating of recursive functions.
+While that is all purely in $\lambda$ calculus, see \cref{sec:extensions} for some discussion.
 
-\section{Parsing}
-We have been looking at $\lambda$s in an annoying way, as [[[lambda, N, B]]].
-It would be nice if we could write that as [[(lambda N B)]], for instance.
-We need a parser.
+Hopefully this and the previous section help demonstrate what we can really start to do even with the tiny amount of prolog we've already written.
+If nothing else, it hopefully proves that we have really got something, here.
 
-NOTE: This is an example where not all ``sugar'' can be implemented within $\lambda$-calculus.
-Obviously here we need I/O hooks, but later on we can't really excise parens except by writing a different parser (which we will not do).
+\section{Parsing}\label{sec:parsing}
+The previous sections relied on us translating the Scheme-like lists into prolog-like lists.
+We shall implement the parser for that here.
 
 In classic parsing style, we'll implement a tokenizer, and then a grammar.
 
@@ -321,22 +362,26 @@ If memory serves (this is me writing in 2020 trying to remember what I did in 20
 
 <<Tokenizer>>=
 read_s(S)           :- get_char(C),                    read_s(C, S).
+read_s('\n',[]).
 read_s(' ',S)       :- get_char(D),                    read_s(D, S).
 read_s('(',['('|S]) :- get_char(D),                    read_s(D, S).
 read_s(')',[')'|S]) :- get_char(D),                    read_s(D, S).
 read_s(C,[N|S])     :- name_char(C), read_name(C,N,D), read_s(D, S).
-read_s('\n',[]).
 @
 The tokenizer is a driver that reads in new characters, and matches them into tokens: parens, names, or end-of-line.
 The clause [[get_char]] is the entry point into the outside world.
 Again think of the non-chronological perspective. It's almost like we're building up [[S]].
 Observe that we use the \emph{goal} to basically append to [[S]].
-
-The output, in a sense, is [[S]] in the topmost clause.
-
-The variable [[C]] is something like the ``current'' character, and [[D]] is the ``next'' character.
-We have to keep these characters in the parameter lists so that we don't accidentally discard them.
-Observe, for instance, how [[end_of_line]] is a non-recursive case.
+The rules, in order:
+\begin{enumerate}
+\item The output, in a sense, is [[S]] in the topmost clause. We read in a character and pass it as the first parameter.
+In that sense, the first parameter is [[read_s/2]] is the ``just-read'' character.
+\item If we just read a newline, we're done, and our output is the empty sequence of tokens.
+\item If we read a whitespace, discard it.
+\item If we read a parens, we push it on to our sequence (the tail [[S]] is defined from the later calls of [[read_s]]---consider the base case of a newline).
+\item The other parens case.
+\item Reading a ``name'' requires additional reasoning, but the end result is the same: a single atom, [[N]], is pushed on to our sequence of tokens.
+\end{enumerate}
 
 The only ``interesting'' token, then, is that determined by [[read_name]].
 The clauses for that predicate are as follows:
@@ -349,10 +394,8 @@ read_name_chars([C|S], C, E) :-
     get_char(D),
     read_name_chars(S, D, E).
 read_name_chars([],C,C) :- not(name_char(C)).
-
 name_char(C) :- char_code(C,N), N >= 65, N =< 90. % upper case
 name_char(C) :- char_code(C,N), N >= 97, N =< 122. % lower case.
-name_char(C) :- char_code(C,N), N == 95. % underscore
 name_char(C) :- char_code(C,N), N >= 48, N =< 57. % decimals
 @
 The output parameter, such that it is, is [[N]] in the first rule.
@@ -376,7 +419,7 @@ parse([],[],[]).
 How does this work? That's an excellent question.
 We shall go line-by-line:
 \begin{enumerate}
-\item This is the entry point: A parse is valid when the sequence-of-tokens [[S]] is the same as the $\lambda$-expression [[L]].
+\item This is the entry point: A parse is valid when the sequence-of-tokens [[S]] yields the $\lambda$-expression [[L]].
 This is implemented by deferring to [[parse/3]], where the first parameter is some prefix of tokens, the second is the unmatched suffix of tokens, and the third parameter is the $\lambda$-expression of the prefix.
 So the entry-point parse is valid when there is no unparsed suffix.
 \item This first rule for [[parse/3]] handles when the next token it sees is open-parens.
@@ -385,25 +428,22 @@ We essentially defer to a sub-parse of the tail [[T]] of that prefix, ending wit
 The result of that sub-parse is [[M]], which we wrap in a list (because it was in parens).
 The remaining suffix of that sub-parse, [[S]], is itself parsed to give us the \emph{tail} following that [[M]].
 \item When we reach the end of a parens, that is the start of some intermediate list we build up, so the result of that parse is [].
+\item This handles any token not [[(]] or [[)]], i.e., [[lambda]] or a [[name]].
+In those cases, we simply push them on to our existing output list.
 \item The base case.
 \end{enumerate}
 
 We also want to print out our internal lambda representation the same way.
-Note that [[atomic_list_concat]] is provided by our environment, and does what you think.
+Note that [[atomic_list_concat]] is provided by our environment, and given a (flat) list of tokens concatenates them into an atom.
 <<Lambda Printer>>=
 lambda_to_atom(L, R) :- parse(S, L), atomic_list_concat(S, ' ', R).
 @
 Isn't that neat, we use the parser to ``unparse'' the $\lambda$-expression?
-We'd like to be able to do that with sugaring/desugaring/$\beta$-reductions, but I've not figured it out yet.
 
 Finally, we want to present a simple user-interactive loop.
-Don't call it a repl.
+This is an extremely primitive REPL, in a sense.
 We have a few different commands we can unify against:
 <<Repl Commands>>=
-compute(L, D, R) :-
-    desugar_all(L, D, DL),
-    evaluate(DL, S),
-    resugar_all(S, D, R).
 execute_command(['define', N, L], D, [[N,R]|D]) :- compute(L, D, R).
 execute_command(['execute', L], D,D) :-
     compute(L, D, R),
@@ -412,7 +452,8 @@ execute_command(['execute', L], D,D) :-
 execute_command(['trace' | T],D,D) :- trace, execute_command(T, D, D).
 execute_command(['halt'],_,_) :- halt.
 @
-
+The middle parameter [[D]] is the list of our defines--this is our environment.
+The interaction, such that it is, against this procedure is as follows:
 <<Main Loop>>=
 main_loop(OD) :-
     read_s(S),
@@ -422,9 +463,10 @@ main_loop(OD) :-
 main_loop(OD) :- write('Parse error'), nl, main_loop(OD).
 main :- main_loop([]), halt.
 @
+Observe that [[main]] serves as our entry point.
 
-
-
+This completes our entire $\lambda$-calculator in prolog!
+The entire file (see \cref{code:lambda}) is the concatenation of these figures:
 <<lambda.pl>>=
 <<Initial Lambda Calculus Definitions>>
 <<Beta Reduction>>
@@ -438,26 +480,42 @@ main :- main_loop([]), halt.
 <<Read Name>>
 <<Parser>>
 <<Lambda Printer>>
+<<Compute>>
 <<Repl Commands>>
 <<Main Loop>>
 @
 
-\section{Extentions}
-Resugaring should be able to be expressed as beta-reduction, but backwards.
-This may require canonicalization to be done in beta reductions.
+I hope I was able to share at least some novel insights and enabled some interesting thoughts.
 
-Implementing arithmetic and other demonstrations.
+\section{Extentions}\label{sec:extensions}
+I do not intend to extend the ideas here further, but as a conclusion I will list what I see as ways of taking things further.
 
-Observe that we very often traverse the $\lambda$-expression tree (the repeated pattern of the name being the base case, and the function/applications being recursively mapped).
-Perhaps this suggests a second-order predicate that maps, or folds, or both, over the expression.
-Maybe this is too close to $\lambda$-calculus and would get us full circle; I don't know.
+\begin{description}
+\item[Express resugaring as $\beta$-reduction]
+To me the most fascinating part of prolog is how, for instance, our [[parse]] procedure could also ``unparse''.
+The [[append]] procedure is the canonical example of this bi-directionality, as far as I can tell.
+As we saw how desugaring can be realized as a $\beta$-reduction, I would think it neat if resugaring could be realized essentially the same way.
+\item[Extend things to enable recursive definitions]
+The implementation of arithmetic in $\lambda$-calculus motivates recursion\cite{artofprolog}, which in turn reveals some fascinating limits and interactions of macros versus evaluation.
+Seeing what needs to change, if anything, in the computer here to support that would be a natural extension.
+\item[Extend the parser to enable fewer parens]
+A sort of meta-sugaring is providing a more sophisticated parser that can infer implicit parens.
+I think this is interesting in that, as far as I can tell, it would need an implementation ``outside'' the existing macro system.
+If memory serves, that would be a ``reader'' macro, rather than a \ldots macro-macro.
+\item[Continue the functionality in \cite{lambdacalc}]
+Perhaps with the previous two items completed, more of \cite{lambdacalc} can be implemented in this extended environment.
+\item[Implement a $\lambda$-expression-walker]
+A $\lambda$-expression is basically a tree--and our $\alpha,\beta$ reductions are essentially walks of such a tree.
+Maybe this would blur the lines between prolog and scheme in a way that detracts from the document, but providing a second-order predicate to fold or map over a $\lambda$-expression may be neat.
+\item[Smarter Isomorphism]
+Perhaps a more efficient tree-isomorphism algorithm can be implemented and ultimately a faster resugaring.
+\end{description}
 
-I wonder if the parser can be improved or reduced in lines-of-code, though I gave it a shot and it's hard to match parens.
-I think the original code may have been tracing through a parser provided in \cite{artofprolog}.
+Thanks for reading!
 
 \appendix
 \newpage
-\section{Complete Code Listing}
+\section{Complete Code Listing}\label{code:lambda}
 \inputminted[linenos=true]{prolog}{lambda.pl}
 \newpage
 
