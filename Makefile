@@ -31,4 +31,4 @@ book.pdf: book.tex mynoweb.py
 
 clean:
 	latexmk -c book.tex -f
-	rm -f *.tex *.tests *.filetest *.pl
+	rm -f *.tex *.tests *.filetest *.pl *.bbl

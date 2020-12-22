@@ -1,2 +1,16 @@
 _minted-book/
-*.pdf
+.vscode
+
+*.log
+*.out
+*.toc
+*.aux
+*.fls
+*.bbl
+*.blg
+*.fdb_latexmk
+
+*.tex
+
+*.tests
+*.filetest
