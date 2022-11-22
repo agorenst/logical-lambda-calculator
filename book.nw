@@ -7,7 +7,7 @@
 
 \title{Logical Lambda Calculator}
 \author{Aaron Gorenstein}
-\date{\today}
+\date{December 22, 2020}
 
 
 \begin{document}
@@ -42,7 +42,7 @@ By implementing the means of evaluating $\lambda$-calculus expressions in prolog
 
 \paragraph{Reader Beware}
 The history of this document is that I first wrote the major code in early 2016.
-Sometime Fall 2016 I added comments and uploaded it to the online repository Github\cite{thisrepo}, where it still resides, inside this newer document.
+Sometime Fall 2016 I added comments and uploaded it to my Github repository, where it still resides, inside this newer document.
 In late 2020, I resurrected this and decided to fully document the code via ``literate coding''.
 So the prose is much newer than the code, though in remembering and writing I refactored much of the code.
 Some of the details, of prolog especially, may be fuzzy, though obviously the root approach and code all works up to the tests.
@@ -528,7 +528,7 @@ Perhaps a more efficient tree-isomorphism algorithm can be implemented and ultim
 \end{description}
 And I'm sure there are other neat directions people can take this.
 
-Thanks for reading! I'd welcome any feedback via an ``issues'' report on the github repo.\cite{thisrepo}
+Thanks for reading!
 
 \appendix
 \newpage
